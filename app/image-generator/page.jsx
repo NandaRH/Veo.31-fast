@@ -1208,9 +1208,6 @@ export default function ImageGeneratorPage() {
           <div className="modal-content" style={{ maxWidth: 640 }}>
             <div className="modal-header">
               <div style={{ fontWeight: 700 }}>Pratinjau Gambar</div>
-              <button className="btn ghost" onClick={() => setPreviewImg(null)}>
-                Tutup
-              </button>
             </div>
             <div
               className="modal-body"
