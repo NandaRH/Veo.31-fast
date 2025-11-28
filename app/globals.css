@@ -3106,6 +3106,7 @@ body.free-locked .modal * {
   width: 100%;
   border-collapse: separate;
   border-spacing: 0 8px;
+  min-width: 760px;
 }
 
 .admin-table thead th {
@@ -3199,6 +3200,12 @@ body.free-locked .modal * {
 .admin-usage-row .count {
   font-size: 12px;
   color: #e5e7eb;
+}
+
+.admin-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 .accent {
   color: #a8ff7a;

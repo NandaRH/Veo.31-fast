@@ -336,7 +336,8 @@ export default function AdminUsersPage() {
             </select>
           </div>
         </div>
-        <table className="admin-table">
+        <div className="admin-table-wrap">
+          <table className="admin-table">
           <thead>
             <tr>
               <th
