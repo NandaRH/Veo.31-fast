@@ -2057,6 +2057,26 @@ pre {
   }
 }
 
+@media (max-width: 640px) {
+  .modal {
+    align-items: flex-start;
+    padding: 16px 8px;
+  }
+  .modal-content {
+    width: 100%;
+    max-width: 100%;
+    border-radius: 18px;
+  }
+  .crop-left {
+    min-height: 260px;
+  }
+  .crop-left canvas {
+    width: 100% !important;
+    max-width: 100%;
+    height: auto;
+  }
+}
+
 /* === App Lock Overlay and Disabled State === */
 .lock-overlay {
   position: fixed;

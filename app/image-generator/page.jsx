@@ -1097,6 +1097,7 @@ export default function ImageGeneratorPage() {
             </div>
             <div className="modal-body" style={{ display: "flex", gap: 12 }}>
               <div
+                className="crop-left"
                 style={{
                   flex: 1,
                   display: "flex",
@@ -1121,7 +1122,7 @@ export default function ImageGeneratorPage() {
                   }}
                 />
               </div>
-              <div style={{ width: 220 }}>
+              <div className="crop-right" style={{ width: 220 }}>
                 <label style={{ fontSize: 12, color: "#9ca3af" }}>Zoom</label>
                 <input
                   type="range"
