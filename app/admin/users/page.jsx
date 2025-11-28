@@ -19,6 +19,8 @@ export default function AdminUsersPage() {
   const userMenuRef = useRef(null);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [detailUser, setDetailUser] = useState(null);
+  const [search, setSearch] = useState("");
+  const [filterPlan, setFilterPlan] = useState("all");
   const pathname = usePathname();
 
   useEffect(() => {
@@ -149,6 +151,20 @@ export default function AdminUsersPage() {
     const days = Math.ceil(diff / (24 * 60 * 60 * 1000));
     return `${days} hari lagi`;
   };
+
+  const filteredItems = items.filter((u) => {
+    const q = search.trim().toLowerCase();
+    if (q) {
+      const email = String(u.email || "").toLowerCase();
+      const name = String(u.full_name || "").toLowerCase();
+      if (!email.includes(q) && !name.includes(q)) return false;
+    }
+    if (filterPlan !== "all") {
+      const p = String(u.plan || "free").toLowerCase();
+      if (p !== filterPlan) return false;
+    }
+    return true;
+  });
 
   return (
     <div
@@ -281,6 +297,45 @@ export default function AdminUsersPage() {
             </div>
           ) : null}
         </div>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 12,
+            marginBottom: 16,
+          }}
+        >
+          <input
+            type="text"
+            className="dropdown"
+            placeholder="Cari email atau nama..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            style={{ maxWidth: 320 }}
+          />
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span
+              className="settings-help"
+              style={{ fontSize: 12, whiteSpace: "nowrap" }}
+            >
+              Filter plan
+            </span>
+            <select
+              className="dropdown"
+              style={{ minWidth: 140 }}
+              value={filterPlan}
+              onChange={(e) => setFilterPlan(e.target.value)}
+            >
+              <option value="all">Semua plan</option>
+              {PLANS.map((p) => (
+                <option key={p} value={p}>
+                  {p}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
         <table className="admin-table">
           <thead>
             <tr>
@@ -312,7 +367,7 @@ export default function AdminUsersPage() {
             </tr>
           </thead>
           <tbody>
-            {items.map((u) => (
+            {filteredItems.map((u) => (
               <tr key={u.id} className="admin-row">
                 <td className="admin-cell primary">{u.email}</td>
                 <td className="admin-cell">{u.full_name || "-"}</td>
