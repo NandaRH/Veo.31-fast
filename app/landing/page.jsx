@@ -25,6 +25,15 @@ export default function LandingPage() {
     <div className="app-shell landing-mode">
       <nav className="navbar">
         <div className="nav-left">
+          <label
+            htmlFor="main-nav-toggle"
+            className="nav-menu-toggle"
+            aria-label="Menu utama"
+          >
+            <span />
+            <span />
+            <span />
+          </label>
           <div className="brand-logo-wrap">
             <Image
               src="/images/fokusAI.png"
@@ -36,15 +45,6 @@ export default function LandingPage() {
             />
           </div>
           <span className="brand-title">FokusAI Studio</span>
-          <label
-            htmlFor="main-nav-toggle"
-            className="nav-menu-toggle"
-            aria-label="Menu utama"
-          >
-            <span />
-            <span />
-            <span />
-          </label>
         </div>
         <input
           type="checkbox"

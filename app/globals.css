@@ -3241,7 +3241,7 @@ body.free-locked .modal * {
     flex-direction: column;
     justify-content: center;
     gap: 3px;
-    margin-left: 6px;
+    margin-right: 8px;
     cursor: pointer;
   }
   .nav-menu-toggle span {
