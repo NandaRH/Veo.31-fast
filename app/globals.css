@@ -3227,9 +3227,8 @@ body.free-locked .modal * {
   }
 }
 .nav-center-scroll {
-  flex: 1;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
+  flex: 0;
+  overflow-x: visible;
 }
 
 @media (max-width: 768px) {
