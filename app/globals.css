@@ -4632,19 +4632,20 @@ body.route-login .app-shell {
   }
 }
 
-/* Mobile: Mode Prompt cards scroll horizontally */
+/* Mobile: Mode Prompt satu kolom, tidak overflow */
 @media (max-width: 640px) {
   .sidebar .mode-grid {
-    display: flex;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    padding-bottom: 6px;
-    margin-bottom: 18px;
+    display: grid;
+    grid-template-columns: 1fr;
     gap: 10px;
+    overflow-x: visible;
+    padding-bottom: 0;
+    margin-bottom: 18px;
   }
   .sidebar .mode-card {
-    flex: 0 0 auto;
-    min-width: 190px;
-    max-width: 70vw;
+    flex: none;
+    min-width: 0;
+    width: 100%;
+    max-width: 100%;
   }
 }
