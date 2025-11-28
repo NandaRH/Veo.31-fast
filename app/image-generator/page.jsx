@@ -54,6 +54,7 @@ export default function ImageGeneratorPage() {
   const [cropTargetSlot, setCropTargetSlot] = useState(null);
   const [showRefSection, setShowRefSection] = useState(false);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [previewImg, setPreviewImg] = useState(null);
 
   useEffect(() => {
     let mounted = true;
@@ -1064,7 +1065,13 @@ export default function ImageGeneratorPage() {
                     <img
                       src={img.url}
                       alt={img.title}
-                      style={{ width: "100%", height: "auto", borderRadius: 6 }}
+                      style={{
+                        width: "100%",
+                        height: "auto",
+                        borderRadius: 6,
+                        cursor: "pointer",
+                      }}
+                      onClick={() => setPreviewImg(img)}
                     />
                     <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
                       <button
@@ -1186,6 +1193,54 @@ export default function ImageGeneratorPage() {
                 }}
               >
                 Simpan Crop
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {previewImg ? (
+        <div
+          className="modal show"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setPreviewImg(null);
+          }}
+        >
+          <div className="modal-content" style={{ maxWidth: 640 }}>
+            <div className="modal-header">
+              <div style={{ fontWeight: 700 }}>Pratinjau Gambar</div>
+              <button className="btn ghost" onClick={() => setPreviewImg(null)}>
+                Tutup
+              </button>
+            </div>
+            <div
+              className="modal-body"
+              style={{ justifyContent: "center", alignItems: "center" }}
+            >
+              <img
+                src={previewImg.url}
+                alt={previewImg.title}
+                style={{
+                  maxWidth: "100%",
+                  height: "auto",
+                  borderRadius: 12,
+                  border: "1px solid rgba(148,163,184,0.35)",
+                }}
+              />
+            </div>
+            <div
+              className="modal-footer"
+              style={{ justifyContent: "flex-end", gap: 10 }}
+            >
+              <button
+                className="btn ghost"
+                onClick={() =>
+                  downloadImage(previewImg.url, previewImg.title || "image.png")
+                }
+              >
+                Download
+              </button>
+              <button className="btn primary" onClick={() => setPreviewImg(null)}>
+                Tutup
               </button>
             </div>
           </div>
