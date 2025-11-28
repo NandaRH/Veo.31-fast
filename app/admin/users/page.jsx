@@ -406,6 +406,7 @@ export default function AdminUsersPage() {
             ))}
           </tbody>
         </table>
+        </div>
       </main>
       {showLogoutModal && (
         <div
