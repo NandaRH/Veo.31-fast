@@ -1383,19 +1383,43 @@ function CropCanvas({
     ctx.strokeRect(1, 1, w - 2, h - 2);
   };
 
-  const onDown = (e) => {
+  const startDrag = (x, y) => {
     draggingRef.current = true;
-    startRef.current = { x: e.clientX, y: e.clientY };
+    startRef.current = { x, y };
   };
-  const onMove = (e) => {
+
+  const moveDrag = (x, y) => {
     if (!draggingRef.current) return;
-    const dx = e.clientX - startRef.current.x;
-    const dy = e.clientY - startRef.current.y;
-    startRef.current = { x: e.clientX, y: e.clientY };
+    const dx = x - startRef.current.x;
+    const dy = y - startRef.current.y;
+    startRef.current = { x, y };
     onOffsetChange({ x: (offset?.x || 0) + dx, y: (offset?.y || 0) + dy });
   };
+
+  const onDown = (e) => {
+    startDrag(e.clientX, e.clientY);
+  };
+
+  const onMove = (e) => {
+    moveDrag(e.clientX, e.clientY);
+  };
+
   const onUp = () => {
     draggingRef.current = false;
+  };
+
+  const onTouchStart = (e) => {
+    const t = e.touches && e.touches[0];
+    if (!t) return;
+    e.preventDefault();
+    startDrag(t.clientX, t.clientY);
+  };
+
+  const onTouchMove = (e) => {
+    const t = e.touches && e.touches[0];
+    if (!t) return;
+    e.preventDefault();
+    moveDrag(t.clientX, t.clientY);
   };
 
   return (
@@ -1414,6 +1438,10 @@ function CropCanvas({
       onMouseMove={onMove}
       onMouseUp={onUp}
       onMouseLeave={onUp}
+      onTouchStart={onTouchStart}
+      onTouchMove={onTouchMove}
+      onTouchEnd={onUp}
+      onTouchCancel={onUp}
     />
   );
 }
