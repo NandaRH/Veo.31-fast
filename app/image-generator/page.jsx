@@ -1396,30 +1396,29 @@ function CropCanvas({
     onOffsetChange({ x: (offset?.x || 0) + dx, y: (offset?.y || 0) + dy });
   };
 
-  const onDown = (e) => {
-    startDrag(e.clientX, e.clientY);
-  };
-
-  const onMove = (e) => {
-    moveDrag(e.clientX, e.clientY);
-  };
-
   const onUp = () => {
     draggingRef.current = false;
   };
 
-  const onTouchStart = (e) => {
-    const t = e.touches && e.touches[0];
-    if (!t) return;
-    e.preventDefault();
-    startDrag(t.clientX, t.clientY);
+  const onPointerDown = (e) => {
+    if (e.pointerType === "touch" || e.pointerType === "pen") {
+      e.preventDefault?.();
+    }
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    startDrag(e.clientX, e.clientY);
   };
 
-  const onTouchMove = (e) => {
-    const t = e.touches && e.touches[0];
-    if (!t) return;
-    e.preventDefault();
-    moveDrag(t.clientX, t.clientY);
+  const onPointerMove = (e) => {
+    if (!draggingRef.current) return;
+    if (e.pointerType === "touch" || e.pointerType === "pen") {
+      e.preventDefault?.();
+    }
+    moveDrag(e.clientX, e.clientY);
+  };
+
+  const onPointerUp = (e) => {
+    e.currentTarget.releasePointerCapture?.(e.pointerId);
+    onUp();
   };
 
   return (
@@ -1433,15 +1432,12 @@ function CropCanvas({
         borderRadius: 6,
         userSelect: "none",
         cursor: "grab",
+        touchAction: "none",
       }}
-      onMouseDown={onDown}
-      onMouseMove={onMove}
-      onMouseUp={onUp}
-      onMouseLeave={onUp}
-      onTouchStart={onTouchStart}
-      onTouchMove={onTouchMove}
-      onTouchEnd={onUp}
-      onTouchCancel={onUp}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerUp}
     />
   );
 }
