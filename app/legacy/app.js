@@ -1656,28 +1656,9 @@ export function initLegacyApp({ initialMode } = {}) {
     }
     const infoEl = el("singleImageUploadInfo");
     if (infoEl) {
-      const parts = [`Rasio gambar: ${aspectLabel}`];
-      if (singleImage.mediaId) parts.push(`Media ID: ${singleImage.mediaId}`);
-      if (singleImage.uploadInfo?.uploadToken)
-        parts.push(`Upload Token: ${singleImage.uploadInfo.uploadToken}`);
-      if (singleImage.uploadInfo?.mediaGenerationId)
-        parts.push(`Media Gen ID: ${singleImage.uploadInfo.mediaGenerationId}`);
-      if (
-        Number.isFinite(singleImage.uploadInfo?.width) &&
-        Number.isFinite(singleImage.uploadInfo?.height)
-      ) {
-        parts.push(
-          `Resolusi upload: ${singleImage.uploadInfo.width}x${singleImage.uploadInfo.height}`
-        );
-      }
-      if (parts.length) {
-        infoEl.textContent = parts.join(" | ");
-      } else if (singleImage.imageUrl) {
-        infoEl.textContent =
-          "Media ID belum diisi. Upload ke Labs atau tempel ID untuk Start Image.";
-      } else {
-        infoEl.textContent = "";
-      }
+      // Jangan tampilkan detail teknis; cukup gunakan teks statis
+      // "Jika Media ID diisi, generate akan memakai Start Image" di markup.
+      infoEl.textContent = "";
     }
   };
   const ensureBatchImageDataUrl = async () => {
