@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import Image from "next/image";
+import NextImage from "next/image";
 import { supabase } from "../lib/supabaseClient";
 
 export default function ImageGeneratorPage() {
@@ -670,7 +670,7 @@ export default function ImageGeneratorPage() {
       <div className="app-shell prompt-shell">
         <header className="page-header">
           <div className="page-brand">
-            <Image
+            <NextImage
               src="/images/fokusAI.png"
               alt="Logo FokusAI Studio"
               width={50}
@@ -1392,7 +1392,7 @@ function CropCanvas({
 
   useEffect(() => {
     if (!src) return;
-    const img = new Image();
+    const img = new window.Image();
     img.onload = () => {
       imgRef.current = img;
       const base = Math.max(w / img.width, h / img.height);
@@ -1521,7 +1521,7 @@ function CropCanvas({
 async function renderCropToDataUrl(src, aspect, scale, offset) {
   return new Promise((resolve, reject) => {
     try {
-      const img = new Image();
+      const img = new window.Image();
       img.onload = () => {
         const w =
           aspect === "landscape" ? 720 : aspect === "portrait" ? 405 : 512;
