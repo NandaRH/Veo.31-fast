@@ -472,6 +472,49 @@ try {
     srSupabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
   }
 } catch (_) {}
+
+// ==== Realtime plan helpers (shared across routes) ====
+const planSubscribers = new Map(); // userId -> Set(res)
+
+const pushPlanEvent = (userId, event, data = {}) => {
+  const set = planSubscribers.get(userId);
+  if (!set || !set.size) return;
+  const payload = { userId, event, ...data };
+  const line = `event: ${event}\n` + `data: ${JSON.stringify(payload)}\n\n`;
+  for (const res of set) {
+    try {
+      res.write(line);
+    } catch (_) {}
+  }
+};
+
+const fetchPlanForUser = async (uid) => {
+  const result = { plan: "free", expiry: null };
+  if (!srSupabase || !uid) return result;
+  try {
+    const { data, error } = await srSupabase
+      .from("users")
+      .select("plan")
+      .eq("id", uid)
+      .single();
+    if (!error && data) {
+      result.plan = String(data.plan || "free").toLowerCase();
+    }
+  } catch (_) {}
+  try {
+    const { data: adminUser } = await srSupabase.auth.admin.getUserById(uid);
+    const meta = adminUser?.user?.user_metadata || {};
+    const pe = meta?.planExpiry;
+    if (typeof pe === "number" && Number.isFinite(pe)) {
+      result.expiry = pe;
+    } else if (typeof pe === "string" && pe.trim()) {
+      const n = Number(pe);
+      if (Number.isFinite(n)) result.expiry = n;
+    }
+  } catch (_) {}
+  return result;
+};
+
 const ADMIN_SECRET = process.env.ADMIN_SECRET || "";
 const ADMIN_EMAIL_WHITELIST = String(process.env.ADMIN_EMAIL_WHITELIST || "")
   .split(",")
@@ -1920,50 +1963,6 @@ const startServer = async () => {
           res.write(line);
         } catch (_) {}
       }
-    };
-
-    // ==== Realtime plan updates (SSE per user) ====
-    const planSubscribers = new Map(); // userId -> Set(res)
-
-    const pushPlanEvent = (userId, event, data = {}) => {
-      const set = planSubscribers.get(userId);
-      if (!set || !set.size) return;
-      const payload = { userId, event, ...data };
-      const line = `event: ${event}\n` + `data: ${JSON.stringify(payload)}\n\n`;
-      for (const res of set) {
-        try {
-          res.write(line);
-        } catch (_) {}
-      }
-    };
-
-    const fetchPlanForUser = async (uid) => {
-      const result = { plan: "free", expiry: null };
-      if (!srSupabase || !uid) return result;
-      try {
-        const { data, error } = await srSupabase
-          .from("users")
-          .select("plan")
-          .eq("id", uid)
-          .single();
-        if (!error && data) {
-          result.plan = String(data.plan || "free").toLowerCase();
-        }
-      } catch (_) {}
-      try {
-        const { data: adminUser } = await srSupabase.auth.admin.getUserById(
-          uid
-        );
-        const meta = adminUser?.user?.user_metadata || {};
-        const pe = meta?.planExpiry;
-        if (typeof pe === "number" && Number.isFinite(pe)) {
-          result.expiry = pe;
-        } else if (typeof pe === "string" && pe.trim()) {
-          const n = Number(pe);
-          if (Number.isFinite(n)) result.expiry = n;
-        }
-      } catch (_) {}
-      return result;
     };
 
     const labsExecute = async ({
