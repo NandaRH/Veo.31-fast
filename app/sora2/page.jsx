@@ -86,6 +86,23 @@ export default function Sora2Page() {
       setPlan(p || "free");
     } catch (_) {}
   }, []);
+  // Realtime sinkron plan dari PlanSync
+  useEffect(() => {
+    const handler = (e) => {
+      try {
+        const p = String(e.detail?.plan || "").toLowerCase();
+        if (p) setPlan(p);
+      } catch (_) {}
+    };
+    try {
+      window.addEventListener("plan-updated", handler);
+    } catch (_) {}
+    return () => {
+      try {
+        window.removeEventListener("plan-updated", handler);
+      } catch (_) {}
+    };
+  }, []);
   useEffect(() => {
     (async () => {
       try {

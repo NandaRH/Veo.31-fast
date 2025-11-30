@@ -61,6 +61,24 @@ export default function DashboardPage() {
     } catch (_) {}
   }, []);
 
+  // Dengarkan event realtime plan yang dipush dari PlanSync (SSE)
+  useEffect(() => {
+    const handler = (e) => {
+      try {
+        const p = String(e.detail?.plan || "").toLowerCase();
+        if (p) setPlan(p);
+      } catch (_) {}
+    };
+    try {
+      window.addEventListener("plan-updated", handler);
+    } catch (_) {}
+    return () => {
+      try {
+        window.removeEventListener("plan-updated", handler);
+      } catch (_) {}
+    };
+  }, []);
+
   useEffect(() => {
     let timer = null;
     const updateText = (expMs) => {

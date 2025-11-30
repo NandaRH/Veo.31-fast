@@ -2,6 +2,7 @@ import "./globals.css";
 import PageTransition from "./PageTransition";
 import ScrollPerf from "./ScrollPerf";
 import GlobalBackgrounds from "./components/GlobalBackgrounds";
+import PlanSync from "./PlanSync";
 import { Inter } from "next/font/google";
 
 const inter = Inter({ subsets: ["latin"], display: "swap" });
@@ -34,6 +35,7 @@ export default function RootLayout({ children }) {
       <body className={inter.className} suppressHydrationWarning>
         <GlobalBackgrounds />
         <ScrollPerf />
+        <PlanSync />
         <PageTransition>{children}</PageTransition>
       </body>
     </html>

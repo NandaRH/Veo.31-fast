@@ -46,6 +46,26 @@ export default function LanggananPage() {
     } catch (_) {}
   }, []);
 
+  // Realtime sinkron plan dari PlanSync (SSE)
+  useEffect(() => {
+    const handler = (e) => {
+      try {
+        const p = String(e.detail?.plan || "").toLowerCase();
+        if (!p) return;
+        setPlan(p);
+        setIsFree(p === "free");
+      } catch (_) {}
+    };
+    try {
+      window.addEventListener("plan-updated", handler);
+    } catch (_) {}
+    return () => {
+      try {
+        window.removeEventListener("plan-updated", handler);
+      } catch (_) {}
+    };
+  }, []);
+
   useEffect(() => {
     const onKey = (e) => {
       if (e.key === "Escape") setShowLogoutModal(false);

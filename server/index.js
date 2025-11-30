@@ -590,6 +590,11 @@ app.post("/api/admin/users/:id/plan", requireAdmin, async (req, res) => {
       }
       await srSupabase.auth.admin.updateUserById(id, { user_metadata: meta });
     } catch (_) {}
+    // Push realtime plan update ke user terkait (jika ada subscriber)
+    try {
+      const { plan: curPlan, expiry } = await fetchPlanForUser(id);
+      pushPlanEvent(id, "plan_update", { plan: curPlan, expiry });
+    } catch (_) {}
     res.json({ ok: true, user: data });
   } catch (e) {
     res.status(500).json({ error: String(e) });
@@ -639,28 +644,52 @@ app.get("/api/me/plan", async (req, res) => {
     if (ue) return res.status(401).json({ error: String(ue.message || ue) });
     const uid = String(userData?.user?.id || "");
     if (!uid) return res.status(401).json({ error: "Invalid user" });
-    const { data, error } = await srSupabase
-      .from("users")
-      .select("plan")
-      .eq("id", uid)
-      .single();
-    if (error)
-      return res.status(500).json({ error: String(error.message || error) });
-    const plan = String(data?.plan || "free").toLowerCase();
-    let expiry = null;
-    try {
-      const { data: adminUser } = await srSupabase.auth.admin.getUserById(uid);
-      const meta = adminUser?.user?.user_metadata || {};
-      const pe = meta?.planExpiry;
-      if (typeof pe === "number" && isFinite(pe)) expiry = pe;
-      else if (typeof pe === "string" && pe.trim()) {
-        const n = Number(pe);
-        if (isFinite(n)) expiry = n;
-      }
-    } catch (_) {}
+    const { plan, expiry } = await fetchPlanForUser(uid);
     res.json({ ok: true, plan, expiry });
   } catch (e) {
     res.status(500).json({ error: String(e) });
+  }
+});
+
+// SSE: realtime plan perubahan untuk user yang sedang login
+app.get("/api/me/plan/stream", async (req, res) => {
+  try {
+    if (!srSupabase)
+      return res.status(500).json({ error: "Supabase not configured" });
+    const token = String(req.query.token || "");
+    if (!token) return res.status(401).json({ error: "Missing token" });
+    const { data: userData, error: ue } = await srSupabase.auth.getUser(token);
+    if (ue) return res.status(401).json({ error: String(ue.message || ue) });
+    const uid = String(userData?.user?.id || "");
+    if (!uid) return res.status(401).json({ error: "Invalid user" });
+
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+    });
+    res.write("\n");
+
+    let set = planSubscribers.get(uid);
+    if (!set) {
+      set = new Set();
+      planSubscribers.set(uid, set);
+    }
+    set.add(res);
+
+    req.on("close", () => {
+      try {
+        const s = planSubscribers.get(uid);
+        if (s) s.delete(res);
+      } catch (_) {}
+    });
+
+    const { plan, expiry } = await fetchPlanForUser(uid);
+    pushPlanEvent(uid, "plan_snapshot", { plan, expiry });
+  } catch (_) {
+    try {
+      res.end();
+    } catch (_) {}
   }
 });
 
@@ -1891,6 +1920,50 @@ const startServer = async () => {
           res.write(line);
         } catch (_) {}
       }
+    };
+
+    // ==== Realtime plan updates (SSE per user) ====
+    const planSubscribers = new Map(); // userId -> Set(res)
+
+    const pushPlanEvent = (userId, event, data = {}) => {
+      const set = planSubscribers.get(userId);
+      if (!set || !set.size) return;
+      const payload = { userId, event, ...data };
+      const line = `event: ${event}\n` + `data: ${JSON.stringify(payload)}\n\n`;
+      for (const res of set) {
+        try {
+          res.write(line);
+        } catch (_) {}
+      }
+    };
+
+    const fetchPlanForUser = async (uid) => {
+      const result = { plan: "free", expiry: null };
+      if (!srSupabase || !uid) return result;
+      try {
+        const { data, error } = await srSupabase
+          .from("users")
+          .select("plan")
+          .eq("id", uid)
+          .single();
+        if (!error && data) {
+          result.plan = String(data.plan || "free").toLowerCase();
+        }
+      } catch (_) {}
+      try {
+        const { data: adminUser } = await srSupabase.auth.admin.getUserById(
+          uid
+        );
+        const meta = adminUser?.user?.user_metadata || {};
+        const pe = meta?.planExpiry;
+        if (typeof pe === "number" && Number.isFinite(pe)) {
+          result.expiry = pe;
+        } else if (typeof pe === "string" && pe.trim()) {
+          const n = Number(pe);
+          if (Number.isFinite(n)) result.expiry = n;
+        }
+      } catch (_) {}
+      return result;
     };
 
     const labsExecute = async ({

@@ -45,7 +45,8 @@ export default function RegisterPage() {
     }
     try {
       setBusy(true);
-      setStatus("Mendaftar...");
+      // Reset pesan status setiap submit ulang
+      setStatus("");
       if (!supabase) {
         setStatus("Konfigurasi Supabase belum diset.");
         return;
@@ -61,6 +62,8 @@ export default function RegisterPage() {
           data: { name: name.trim(), full_name: name.trim(), plan: "free" },
         },
       });
+
+      // Jika Supabase mengembalikan error
       if (error) {
         const rawMsg = (error.message || "").toLowerCase();
 
@@ -77,6 +80,16 @@ export default function RegisterPage() {
         }
         return;
       }
+
+      // Pola resmi dari Supabase:
+      // kalau signUp dipanggil lagi dengan email yang sama,
+      // sering kali TIDAK ada error, tapi identities = [] (kosong).
+      const identities = data?.user?.identities;
+      if (Array.isArray(identities) && identities.length === 0) {
+        setStatus("Email Sudah Terdaftar");
+        return; // jangan redirect ke login
+      }
+
       setStatus("Registrasi berhasil. Silakan login.");
       router.push("/login");
     } finally {
@@ -199,7 +212,11 @@ export default function RegisterPage() {
                 className="dropdown"
                 placeholder="Email Address"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  // Hapus pesan error saat user mengubah email
+                  if (status) setStatus("");
+                }}
               />
             </div>
 

@@ -137,6 +137,26 @@ export default function ImageGeneratorPage() {
     })();
   }, []);
 
+  // Reaksi terhadap event plan realtime dari PlanSync
+  useEffect(() => {
+    const handler = (e) => {
+      try {
+        const p = String(e.detail?.plan || "").toLowerCase();
+        if (!p) return;
+        setPlan(p);
+        setIsFree(p === "free");
+      } catch (_) {}
+    };
+    try {
+      window.addEventListener("plan-updated", handler);
+    } catch (_) {}
+    return () => {
+      try {
+        window.removeEventListener("plan-updated", handler);
+      } catch (_) {}
+    };
+  }, []);
+
   const openGalleryPicker = async () => setStatus("Galeri dinonaktifkan.");
   const pickFromGallery = async () => setStatus("Galeri dinonaktifkan.");
 
