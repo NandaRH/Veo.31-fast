@@ -46,6 +46,7 @@ try {
 // Metadata store for uploads (e.g., persisted Media ID per file)
 const uploadsMetaPath = path.join(uploadsDir, "uploads-meta.json");
 const usageStatsPath = path.join(uploadsDir, "usage-stats.json");
+const sessionsPath = path.join(uploadsDir, "sessions.json");
 const readUploadsMeta = () => {
   try {
     if (!fs.existsSync(uploadsMetaPath)) return {};
@@ -77,6 +78,22 @@ const writeUsageStats = (stats) => {
   try {
     const content = JSON.stringify(stats || {}, null, 2);
     fs.writeFileSync(usageStatsPath, content, "utf8");
+  } catch (_) {}
+};
+const readSessions = () => {
+  try {
+    if (!fs.existsSync(sessionsPath)) return {};
+    const raw = fs.readFileSync(sessionsPath, "utf8");
+    const json = JSON.parse(raw);
+    return json && typeof json === "object" ? json : {};
+  } catch (_) {
+    return {};
+  }
+};
+const writeSessions = (sessions) => {
+  try {
+    const content = JSON.stringify(sessions || {}, null, 2);
+    fs.writeFileSync(sessionsPath, content, "utf8");
   } catch (_) {}
 };
 const parseCookies = (cookieHeader) => {
@@ -143,6 +160,15 @@ app.post("/api/session/establish", async (req, res) => {
     if (!uid) return res.status(401).json({ error: "Invalid user" });
     try {
       const cookies = [];
+      const sessions = readSessions();
+      const sessionKey = crypto.randomBytes(16).toString("hex");
+      sessions[uid] = {
+        key: sessionKey,
+        uid,
+        email,
+        updatedAt: new Date().toISOString(),
+      };
+      writeSessions(sessions);
       cookies.push(
         `auth_ok=1; Path=/; HttpOnly; SameSite=Lax; Max-Age=${60 * 60 * 24 * 7}`
       );
@@ -156,6 +182,11 @@ app.post("/api/session/establish", async (req, res) => {
           email
         )}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${60 * 60 * 24 * 7}`
       );
+      cookies.push(
+        `auth_session=${encodeURIComponent(
+          sessionKey
+        )}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${60 * 60 * 24 * 7}`
+      );
       res.setHeader("Set-Cookie", cookies);
     } catch (_) {}
     res.json({ ok: true, uid, email });
@@ -166,15 +197,52 @@ app.post("/api/session/establish", async (req, res) => {
 
 app.post("/api/session/logout", async (req, res) => {
   try {
+    try {
+      const cookieHeader = String(req.headers["cookie"] || "");
+      const cookiesIn = parseCookies(cookieHeader);
+      const uid = String(cookiesIn.auth_uid || "").trim();
+      if (uid) {
+        const sessions = readSessions();
+        if (sessions && sessions[uid]) {
+          delete sessions[uid];
+          writeSessions(sessions);
+        }
+      }
+    } catch (_) {}
     const cookies = [];
     const expire = "Max-Age=0";
     cookies.push(`auth_ok=; Path=/; HttpOnly; SameSite=Lax; ${expire}`);
     cookies.push(`auth_uid=; Path=/; HttpOnly; SameSite=Lax; ${expire}`);
     cookies.push(`auth_email=; Path=/; HttpOnly; SameSite=Lax; ${expire}`);
+    cookies.push(`auth_session=; Path=/; HttpOnly; SameSite=Lax; ${expire}`);
     res.setHeader("Set-Cookie", cookies);
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: String(e) });
+  }
+});
+
+app.get("/api/session/validate", async (req, res) => {
+  try {
+    const cookieHeader = String(req.headers["cookie"] || "");
+    const cookies = parseCookies(cookieHeader);
+    const uid = String(cookies.auth_uid || "").trim();
+    const key = String(cookies.auth_session || "").trim();
+    if (!uid || !key) {
+      return res
+        .status(401)
+        .json({ ok: false, reason: "NO_SESSION", uid: uid || null });
+    }
+    const sessions = readSessions();
+    const current = sessions && sessions[uid];
+    if (!current || current.key !== key) {
+      return res
+        .status(401)
+        .json({ ok: false, reason: "OTHER_LOGIN", uid });
+    }
+    return res.json({ ok: true, uid });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: String(e) });
   }
 });
 

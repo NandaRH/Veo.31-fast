@@ -166,6 +166,9 @@ export default function LoginPage() {
         dest = "/dashboard";
       } catch (_) {}
       try {
+        document.cookie = `sessionExpiry=1; path=/; max-age=${60 * 60 * 5}`;
+      } catch (_) {}
+      try {
         router.push(dest);
       } catch (_) {
         try {

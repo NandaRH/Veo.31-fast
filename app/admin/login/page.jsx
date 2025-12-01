@@ -104,6 +104,9 @@ export default function AdminLoginPage() {
         document.cookie = `plan=admin; path=/; max-age=${60 * 60 * 24 * 30}`;
       } catch (_) {}
       try {
+        document.cookie = `sessionExpiry=1; path=/; max-age=${60 * 60 * 5}`;
+      } catch (_) {}
+      try {
         router.push("/admin/dashboard");
       } catch (_) {
         window.location.href = "/admin/dashboard";

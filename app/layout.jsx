@@ -3,6 +3,7 @@ import PageTransition from "./PageTransition";
 import ScrollPerf from "./ScrollPerf";
 import GlobalBackgrounds from "./components/GlobalBackgrounds";
 import PlanSync from "./PlanSync";
+import SessionGuard from "./SessionGuard";
 import { Inter } from "next/font/google";
 
 const inter = Inter({ subsets: ["latin"], display: "swap" });
@@ -36,6 +37,7 @@ export default function RootLayout({ children }) {
         <GlobalBackgrounds />
         <ScrollPerf />
         <PlanSync />
+        <SessionGuard />
         <PageTransition>{children}</PageTransition>
       </body>
     </html>
