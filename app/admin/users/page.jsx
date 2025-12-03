@@ -21,6 +21,8 @@ export default function AdminUsersPage() {
   const [detailUser, setDetailUser] = useState(null);
   const [search, setSearch] = useState("");
   const [filterPlan, setFilterPlan] = useState("all");
+  const [credits, setCredits] = useState(null);
+  const [creditLoading, setCreditLoading] = useState(false);
   const pathname = usePathname();
 
   useEffect(() => {
@@ -49,6 +51,22 @@ export default function AdminUsersPage() {
           await loadUsers(s);
         }
       } catch (_) {}
+    })();
+    (async () => {
+      try {
+        setCreditLoading(true);
+        const resp = await fetch("/api/me/credits");
+        const data = await resp.json();
+        if (resp.ok && data && typeof data.balance !== "undefined") {
+          setCredits(Number(data.balance || 0));
+        } else {
+          setCredits(null);
+        }
+      } catch (_) {
+        setCredits(null);
+      } finally {
+        setCreditLoading(false);
+      }
     })();
   }, []);
 
@@ -184,6 +202,33 @@ export default function AdminUsersPage() {
           style={{ display: "flex", gap: 8, alignItems: "center" }}
           ref={userMenuRef}
         >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "10px 12px",
+              borderRadius: 12,
+              background:
+                "linear-gradient(135deg, rgba(255,215,0,0.16), rgba(255,215,0,0.08))",
+              border: "1px solid rgba(255,215,0,0.25)",
+              boxShadow: "0 0 16px rgba(255,215,0,0.12)",
+              minWidth: 120,
+              justifyContent: "center",
+            }}
+            title="Saldo kredit"
+          >
+            <span aria-hidden="true" style={{ fontSize: 18 }}>
+              💳
+            </span>
+            <span style={{ color: "#f8fafc", fontWeight: 700, fontSize: 14 }}>
+              {creditLoading
+                ? "—"
+                : credits === null
+                ? "N/A"
+                : credits.toLocaleString("id-ID")}
+            </span>
+          </div>
           <a
             href="/prompt-tunggal"
             className="settings-btn"
@@ -246,6 +291,19 @@ export default function AdminUsersPage() {
                 >
                   <span aria-hidden="true">👥</span>
                   <span>Manage Users</span>
+                </button>
+              ) : null}
+              {pathname !== "/admin/credits" ? (
+                <button
+                  className="user-menu-item"
+                  type="button"
+                  onClick={() => {
+                    window.location.href = "/admin/credits";
+                    setShowUserMenu(false);
+                  }}
+                >
+                  <span aria-hidden="true">💳</span>
+                  <span>Credits</span>
                 </button>
               ) : null}
               <div className="user-menu-divider"></div>

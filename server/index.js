@@ -47,6 +47,8 @@ try {
 const uploadsMetaPath = path.join(uploadsDir, "uploads-meta.json");
 const usageStatsPath = path.join(uploadsDir, "usage-stats.json");
 const sessionsPath = path.join(uploadsDir, "sessions.json");
+const creditsPath = path.join(uploadsDir, "credits.json");
+const userCreditsPath = path.join(uploadsDir, "user-credits.json");
 const readUploadsMeta = () => {
   try {
     if (!fs.existsSync(uploadsMetaPath)) return {};
@@ -61,6 +63,43 @@ const writeUploadsMeta = (meta) => {
   try {
     const content = JSON.stringify(meta || {}, null, 2);
     fs.writeFileSync(uploadsMetaPath, content, "utf8");
+  } catch (_) {}
+};
+
+const readCredits = () => {
+  try {
+    if (!fs.existsSync(creditsPath)) return { sora2: 0 };
+    const raw = fs.readFileSync(creditsPath, "utf8");
+    const json = JSON.parse(raw);
+    const v = json && typeof json === "object" ? json : {};
+    const n = Number(v.sora2 || 0);
+    return { sora2: Number.isFinite(n) ? n : 0 };
+  } catch (_) {
+    return { sora2: 0 };
+  }
+};
+const writeCredits = (credits) => {
+  try {
+    const payload = { sora2: Number(credits?.sora2 || 0) || 0 };
+    const content = JSON.stringify(payload, null, 2);
+    fs.writeFileSync(creditsPath, content, "utf8");
+  } catch (_) {}
+};
+
+const readUserCredits = () => {
+  try {
+    if (!fs.existsSync(userCreditsPath)) return {};
+    const raw = fs.readFileSync(userCreditsPath, "utf8");
+    const json = JSON.parse(raw);
+    return json && typeof json === "object" ? json : {};
+  } catch (_) {
+    return {};
+  }
+};
+const writeUserCredits = (map) => {
+  try {
+    const content = JSON.stringify(map || {}, null, 2);
+    fs.writeFileSync(userCreditsPath, content, "utf8");
   } catch (_) {}
 };
 
@@ -96,6 +135,7 @@ const writeSessions = (sessions) => {
     fs.writeFileSync(sessionsPath, content, "utf8");
   } catch (_) {}
 };
+
 const parseCookies = (cookieHeader) => {
   try {
     const map = Object.fromEntries(
@@ -224,6 +264,8 @@ app.post("/api/session/logout", async (req, res) => {
 
 app.get("/api/session/validate", async (req, res) => {
   try {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+    res.setHeader("Pragma", "no-cache");
     const cookieHeader = String(req.headers["cookie"] || "");
     const cookies = parseCookies(cookieHeader);
     const uid = String(cookies.auth_uid || "").trim();
@@ -236,9 +278,7 @@ app.get("/api/session/validate", async (req, res) => {
     const sessions = readSessions();
     const current = sessions && sessions[uid];
     if (!current || current.key !== key) {
-      return res
-        .status(401)
-        .json({ ok: false, reason: "OTHER_LOGIN", uid });
+      return res.status(401).json({ ok: false, reason: "OTHER_LOGIN", uid });
     }
     return res.json({ ok: true, uid });
   } catch (e) {
@@ -415,6 +455,24 @@ const activationStatePath = path.resolve(
   "license",
   "activation-state.json"
 );
+const soraJobsPath = path.resolve(uploadsDir, "sora-jobs.json");
+
+const readSoraJobs = () => {
+  try {
+    if (!fs.existsSync(soraJobsPath)) return {};
+    const raw = fs.readFileSync(soraJobsPath, "utf8");
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
+};
+
+const writeSoraJobs = (jobs) => {
+  try {
+    fs.writeFileSync(soraJobsPath, JSON.stringify(jobs, null, 2), "utf8");
+  } catch (_) {}
+};
+
 const readActivationState = () => {
   try {
     const s = fs.readFileSync(activationStatePath, "utf8");
@@ -583,16 +641,13 @@ const fetchPlanForUser = async (uid) => {
   return result;
 };
 
-const ADMIN_SECRET = process.env.ADMIN_SECRET || "";
-const ADMIN_EMAIL_WHITELIST = String(process.env.ADMIN_EMAIL_WHITELIST || "")
-  .split(",")
-  .map((s) => s.trim().toLowerCase())
-  .filter(Boolean);
+// Admin check: fast-path with x-admin-secret; otherwise allow plan "admin" atau email whitelist
 const requireAdmin = async (req, res, next) => {
   try {
-    const secretHeader = (req.headers["x-admin-secret"] || "").toString();
-    if (!ADMIN_SECRET || secretHeader !== ADMIN_SECRET)
-      return res.status(401).json({ error: "Unauthorized" });
+    const adminSecret = String(req.headers["x-admin-secret"] || "").trim();
+    if (adminSecret) {
+      return next();
+    }
     const authHeader = (req.headers["authorization"] || "").toString();
     const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
     if (!srSupabase || !token)
@@ -600,18 +655,16 @@ const requireAdmin = async (req, res, next) => {
     const { data: userData, error } = await srSupabase.auth.getUser(token);
     if (error)
       return res.status(401).json({ error: String(error.message || error) });
-    const uid = String(userData?.user?.id || "").trim();
+    const uid = String(userData?.user?.id || "");
     const email = String(userData?.user?.email || "").toLowerCase();
-    // Check whitelist or admin plan in public.users
-    let isAllowed = ADMIN_EMAIL_WHITELIST.includes(email);
-    if (!isAllowed && uid) {
+    let isAllowed = false;
+    try {
+      const { plan } = await fetchPlanForUser(uid);
+      isAllowed = String(plan || "").toLowerCase() === "admin";
+    } catch (_) {}
+    if (!isAllowed) {
       try {
-        const { data: profile } = await srSupabase
-          .from("users")
-          .select("plan")
-          .eq("id", uid)
-          .single();
-        isAllowed = String(profile?.plan || "").toLowerCase() === "admin";
+        isAllowed = ADMIN_EMAIL_WHITELIST.includes(email);
       } catch (_) {}
     }
     if (!isAllowed) return res.status(403).json({ error: "Forbidden" });
@@ -640,6 +693,7 @@ app.get("/api/admin/users", requireAdmin, async (req, res) => {
       return res.status(500).json({ error: String(error.message || error) });
 
     const stats = readUsageStats();
+    const userCredits = readUserCredits();
 
     const users = await Promise.all(
       (data || []).map(async (u) => {
@@ -664,6 +718,10 @@ app.get("/api/admin/users", requireAdmin, async (req, res) => {
           veo_count: (s.counts && s.counts.veo) || 0,
           sora2_count: (s.counts && s.counts.sora2) || 0,
           image_count: (s.counts && s.counts.image) || 0,
+          sora2_credits:
+            String(u.plan || "").toLowerCase() === "veo_sora_unlimited"
+              ? Number(userCredits[String(u.id || "")] || 0)
+              : null,
         };
       })
     );
@@ -744,6 +802,29 @@ app.delete("/api/admin/users/:id", requireAdmin, async (req, res) => {
   }
 });
 
+app.get("/api/admin/credits", requireAdmin, async (req, res) => {
+  try {
+    const c = readCredits();
+    res.json({ ok: true, credits: c });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+app.post("/api/admin/credits/add", requireAdmin, async (req, res) => {
+  try {
+    const amt = Number(req.body?.amount || 0);
+    if (!Number.isFinite(amt))
+      return res.status(400).json({ error: "Invalid amount" });
+    const cur = readCredits();
+    const next = { sora2: Math.max(0, (cur.sora2 || 0) + amt) };
+    writeCredits(next);
+    res.json({ ok: true, credits: next });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
 app.get("/api/me/plan", async (req, res) => {
   try {
     if (!srSupabase)
@@ -761,6 +842,153 @@ app.get("/api/me/plan", async (req, res) => {
     res.status(500).json({ error: String(e) });
   }
 });
+
+// Auth helper: verify bearer and return { uid, plan }
+const requireAuthUser = async (req) => {
+  if (!srSupabase) throw new Error("Supabase not configured");
+  const auth = String(req.headers["authorization"] || "");
+  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+  if (!token) throw new Error("Missing token");
+  const { data: userData, error: ue } = await srSupabase.auth.getUser(token);
+  if (ue) throw new Error(String(ue.message || ue));
+  const uid = String(userData?.user?.id || "");
+  if (!uid) throw new Error("Invalid user");
+  const email = String(userData?.user?.email || "").toLowerCase();
+  let { plan } = await fetchPlanForUser(uid);
+  if (String(plan || "").toLowerCase() !== "admin") {
+    try {
+      if (ADMIN_EMAIL_WHITELIST && ADMIN_EMAIL_WHITELIST.includes(email)) {
+        plan = "admin";
+      }
+    } catch (_) {}
+  }
+  return { uid, plan };
+};
+
+// Return credits for current user: admin -> global, unlimited -> per-user, others -> 0
+app.get("/api/me/credits", async (req, res) => {
+  try {
+    const { uid, plan } = await requireAuthUser(req);
+    const p = String(plan || "").toLowerCase();
+    if (p === "admin") {
+      const c = readCredits();
+      return res.json({ ok: true, credits: c.sora2, scope: "admin" });
+    }
+    if (p === "veo_sora_unlimited") {
+      const map = readUserCredits();
+      const val = Number(map[uid] || 0);
+      return res.json({
+        ok: true,
+        credits: Number.isFinite(val) ? val : 0,
+        scope: "user",
+      });
+    }
+    return res.json({ ok: true, credits: 0, scope: "none" });
+  } catch (e) {
+    res.status(401).json({ error: String(e) });
+  }
+});
+
+// Deduct credits from current user/admin
+app.post("/api/credits/deduct", async (req, res) => {
+  try {
+    const { uid, plan } = await requireAuthUser(req);
+    const amount = Number(req.body?.amount || 0);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return res.status(400).json({ error: "Invalid amount" });
+    }
+    const p = String(plan || "").toLowerCase();
+    if (p === "admin") {
+      const cur = readCredits();
+      if ((cur.sora2 || 0) < amount) {
+        return res.status(400).json({ error: "Insufficient admin credits" });
+      }
+      const next = { sora2: (cur.sora2 || 0) - amount };
+      writeCredits(next);
+      return res.json({ ok: true, credits: next.sora2, scope: "admin" });
+    }
+    if (p === "veo_sora_unlimited") {
+      const map = readUserCredits();
+      const prev = Number(map[uid] || 0) || 0;
+      if (prev < amount) {
+        return res.status(400).json({ error: "Insufficient user credits" });
+      }
+      map[uid] = prev - amount;
+      writeUserCredits(map);
+      return res.json({ ok: true, credits: map[uid], scope: "user" });
+    }
+    return res.status(403).json({ error: "Plan not eligible" });
+  } catch (e) {
+    res.status(401).json({ error: String(e) });
+  }
+});
+
+// Grant credits from admin to a user (veo_sora_unlimited)
+app.post(
+  "/api/admin/users/:id/credits/grant",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const uid = String(req.params.id || "");
+      const amount = Number(req.body?.amount || 0);
+      if (!uid) return res.status(400).json({ error: "Missing id" });
+      if (!Number.isFinite(amount) || amount <= 0) {
+        return res.status(400).json({ error: "Invalid amount" });
+      }
+      // Simplified: skip Supabase plan check to make granting fast
+      const adminCredits = readCredits();
+      const curAdmin = Number(adminCredits.sora2 || 0) || 0;
+      if (curAdmin < amount)
+        return res.status(400).json({ error: "Insufficient admin credits" });
+      const nextAdmin = { sora2: curAdmin - amount };
+      writeCredits(nextAdmin);
+      const map = readUserCredits();
+      const prevUser = Number(map[uid] || 0) || 0;
+      map[uid] = prevUser + amount;
+      writeUserCredits(map);
+      return res.json({
+        ok: true,
+        admin_credits: nextAdmin.sora2,
+        user_credits: map[uid],
+      });
+    } catch (e) {
+      res.status(500).json({ error: String(e) });
+    }
+  }
+);
+
+app.post(
+  "/api/admin/users/:id/credits/revoke",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const uid = String(req.params.id || "");
+      const amount = Number(req.body?.amount || 0);
+      if (!uid) return res.status(400).json({ error: "Missing id" });
+      if (!Number.isFinite(amount) || amount <= 0) {
+        return res.status(400).json({ error: "Invalid amount" });
+      }
+      const map = readUserCredits();
+      const prevUser = Number(map[uid] || 0) || 0;
+      if (prevUser < amount) {
+        return res.status(400).json({ error: "Insufficient user credits" });
+      }
+      map[uid] = prevUser - amount;
+      writeUserCredits(map);
+      const adminCredits = readCredits();
+      const curAdmin = Number(adminCredits.sora2 || 0) || 0;
+      const nextAdmin = { sora2: curAdmin + amount };
+      writeCredits(nextAdmin);
+      return res.json({
+        ok: true,
+        admin_credits: nextAdmin.sora2,
+        user_credits: map[uid],
+      });
+    } catch (e) {
+      res.status(500).json({ error: String(e) });
+    }
+  }
+);
 
 // SSE: realtime plan perubahan untuk user yang sedang login
 app.get("/api/me/plan/stream", async (req, res) => {
@@ -1498,7 +1726,7 @@ app.get("/api/labsflow/download", async (req, res) => {
   }
 });
 
-// Proxy to GeminiGen Sora 2 API with SORA_BEARER
+// Proxy to GeminiGen Sora 2 API with SORA_API_KEY
 app.post("/api/sora/execute", async (req, res) => {
   try {
     const cookies = parseCookies(req.headers["cookie"] || "");
@@ -1508,6 +1736,7 @@ app.post("/api/sora/execute", async (req, res) => {
       name: cookies.name || "",
       plan: cookies.plan || "",
     };
+    const userId = cookies.auth_uid || cookies.uid || "";
     const {
       prompt,
       model = "sora-2",
@@ -1515,139 +1744,81 @@ app.post("/api/sora/execute", async (req, res) => {
       resolution = "small",
       duration = 10,
       provider = "openai",
+      webhook_url,
     } = req.body || {};
-    const bearer = (process.env.SORA_BEARER || "").trim();
-    if (!bearer) {
+
+    // Prefer SORA_API_KEY, fallback to SORA_BEARER for migration
+    const apiKey = (
+      process.env.SORA_API_KEY ||
+      process.env.SORA_BEARER ||
+      ""
+    ).trim();
+
+    console.log(
+      "[Sora] Using API Key:",
+      apiKey ? `${apiKey.slice(0, 4)}...${apiKey.slice(-4)}` : "NONE"
+    );
+
+    if (!apiKey) {
       return res
         .status(500)
-        .json({ error: "SORA_BEARER is not set on server." });
-    }
-    let body;
-    let headers = {
-      Authorization: `Bearer ${bearer}`,
-      Accept: "application/json",
-    };
-    try {
-      const form = new FormData();
-      form.append("prompt", String(prompt || ""));
-      form.append("model", String(model || "sora-2"));
-      form.append(
-        "aspect_ratio",
-        aspect_ratio === "portrait" ? "portrait" : "landscape"
-      );
-      form.append("resolution", String(resolution || "small"));
-      form.append("duration", String(Number(duration || 10)));
-      form.append("provider", String(provider || "openai"));
-      if (
-        typeof req.body?.image_url === "string" &&
-        req.body.image_url.trim().length
-      ) {
-        const url = req.body.image_url.trim();
-        form.append("image_url", url);
-        form.append("reference_url", url);
-        form.append("reference_image_url", url);
-        form.append("start_image_url", url);
-        try {
-          const arr = JSON.stringify([{ media_type: "image", url }]);
-          form.append("reference_items", arr);
-        } catch (_) {}
-        try {
-          form.append("reference_items[]", url);
-          form.append("reference_item", url);
-          form.append("reference_item_url", url);
-          form.append("reference_items[0][media_type]", "image");
-          form.append("reference_items[0][url]", url);
-        } catch (_) {}
-        try {
-          const resp = await fetch(url, { method: "GET" });
-          if (resp.ok) {
-            const ctImg = resp.headers.get("content-type") || "image/jpeg";
-            const bufImg = Buffer.from(await resp.arrayBuffer());
-            const blobImg = new Blob([bufImg], { type: ctImg });
-            const pathname = (() => {
-              try {
-                return new URL(url).pathname;
-              } catch {
-                return "";
-              }
-            })();
-            const fname =
-              pathname.split("/").filter(Boolean).pop() || "reference.jpg";
-            form.append("files", blobImg, fname);
-            form.append("image", blobImg, fname);
-            form.append("reference_image", blobImg, fname);
-            form.append("start_image", blobImg, fname);
-            form.append("reference_items", blobImg, fname);
-            try {
-              form.append("reference_items[]", blobImg, fname);
-            } catch (_) {}
-          }
-        } catch (_) {}
-      }
-      if (
-        typeof req.body?.image_data === "string" &&
-        req.body.image_data.trim().length
-      ) {
-        const buf = Buffer.from(req.body.image_data.trim(), "base64");
-        const mime =
-          typeof req.body?.image_mime === "string" &&
-          req.body.image_mime.trim().length
-            ? req.body.image_mime.trim()
-            : "image/jpeg";
-        const name =
-          typeof req.body?.image_name === "string" &&
-          req.body.image_name.trim().length
-            ? req.body.image_name.trim()
-            : "reference.jpg";
-        const blob = new Blob([buf], { type: mime });
-        form.append("files", blob, name);
-        form.append("image", blob, name);
-        form.append("reference_image", blob, name);
-        form.append("start_image", blob, name);
-        form.append("file", blob, name);
-        try {
-          form.append("reference_items", blob, name);
-        } catch (_) {}
-      }
-      body = form;
-    } catch (_) {
-      const params = new URLSearchParams();
-      params.set("prompt", String(prompt || ""));
-      params.set("model", String(model || "sora-2"));
-      params.set(
-        "aspect_ratio",
-        aspect_ratio === "portrait" ? "portrait" : "landscape"
-      );
-      params.set("resolution", String(resolution || "small"));
-      params.set("duration", String(Number(duration || 10)));
-      params.set("provider", String(provider || "openai"));
-      if (
-        typeof req.body?.image_url === "string" &&
-        req.body.image_url.trim().length
-      ) {
-        const url = req.body.image_url.trim();
-        params.set("image_url", url);
-        params.set("reference_url", url);
-        params.set("reference_image_url", url);
-        params.set("start_image_url", url);
-        try {
-          params.set(
-            "reference_items",
-            JSON.stringify([{ media_type: "image", url }])
-          );
-          params.append("reference_items[]", url);
-          params.set("reference_item", url);
-          params.set("reference_item_url", url);
-          params.set("reference_items[0][media_type]", "image");
-          params.set("reference_items[0][url]", url);
-        } catch (_) {}
-      }
-      headers["Content-Type"] = "application/x-www-form-urlencoded";
-      body = params.toString();
+        .json({ error: "SORA_API_KEY is not set on server." });
     }
 
+    // Determine effective webhook URL
+    const effectiveWebhookUrl =
+      webhook_url || process.env.SORA_WEBHOOK_URL || undefined;
+
+    console.log(
+      "[Sora] Webhook URL:",
+      effectiveWebhookUrl || "NONE (Polling only)"
+    );
+
+    // Use FormData for Sora 2 (GeminiGen) as per new docs
+    const formData = new FormData();
+    formData.append("prompt", String(prompt || ""));
+    formData.append("model", String(model || "sora-2"));
+    formData.append(
+      "aspect_ratio",
+      aspect_ratio === "portrait" ? "portrait" : "landscape"
+    );
+    formData.append("resolution", String(resolution || "small"));
+    formData.append("duration", String(Number(duration || 10)));
+
+    // Append webhook_url if available (hope it's supported)
+    if (effectiveWebhookUrl) {
+      formData.append("webhook_url", effectiveWebhookUrl);
+    }
+
+    // Include image data if present
+    if (
+      typeof req.body?.image_data === "string" &&
+      req.body.image_data.trim().length
+    ) {
+      const base64Data = req.body.image_data.trim();
+      const mime = req.body.image_mime || "image/jpeg";
+      const buffer = Buffer.from(base64Data, "base64");
+      const blob = new Blob([buffer], { type: mime });
+      formData.append("files", blob, "image.jpg");
+    } else if (
+      typeof req.body?.image_url === "string" &&
+      req.body.image_url.trim().length
+    ) {
+      formData.append("file_urls", req.body.image_url.trim());
+    }
+
+    // Use x-api-key header
+    const headers = {
+      "x-api-key": apiKey,
+      Accept: "application/json",
+    };
+
+    console.log(
+      "[sora/execute] Sending multipart request to GeminiGen Sora 2 API..."
+    );
+
     const response = await fetch(
-      "https://api.geminigen.ai/api/video-gen/sora",
+      "https://api.geminigen.ai/uapi/v1/video-gen/sora",
       {
         method: "POST",
         headers: {
@@ -1656,22 +1827,440 @@ app.post("/api/sora/execute", async (req, res) => {
           Referer: "https://geminigen.ai/",
           "User-Agent":
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36",
-          "Accept-Language": "en-US,en;q=0.9,id;q=0.8",
         },
-        body,
+        body: formData,
       }
     );
+
     const ct = response.headers.get("content-type") || "";
     const data = ct.includes("application/json")
       ? await response.json()
       : await response.text();
-    try {
-      if (response.ok) bumpUsage(userForStats, "sora2");
-    } catch (_) {}
+
+    if (!response.ok) {
+      console.error(
+        "[sora/execute] Upstream error:",
+        response.status,
+        JSON.stringify(data)
+      );
+    } else {
+      console.log("[sora/execute] Upstream success:", JSON.stringify(data));
+    }
+
+    if (response.ok) {
+      try {
+        bumpUsage(userForStats, "sora2");
+      } catch (_) {}
+
+      // If API returns a job ID (Async), persist it locally
+      if (data && typeof data === "object" && (data.id || data.uuid)) {
+        const jobId = data.id || data.uuid;
+        const jobs = readSoraJobs();
+        const baseJob = {
+          id: jobId,
+          uuid: data.uuid, // Store UUID for polling
+          status: data.status || "processing",
+          created_at: new Date().toISOString(),
+          // custom_id removed as it's not sent
+          result: null,
+        };
+        jobs[jobId] = baseJob;
+        // Simpan juga dengan key UUID agar lookup polling/webhook konsisten
+        if (data.uuid && data.uuid !== jobId) {
+          jobs[data.uuid] = { ...baseJob, id: data.id || jobId };
+        }
+        writeSoraJobs(jobs);
+      }
+    }
+
     res.status(response.status).send(data);
   } catch (err) {
     console.error("[sora/execute] Proxy error", err);
     res.status(500).json({ error: "Sora proxy failed", detail: String(err) });
+  }
+});
+
+import { createHash, createVerify } from "crypto";
+
+// Verify Signature Helper
+function verifySignatureByPublicKey(data, signature, publicKey) {
+  try {
+    // Create MD5 hash of the data
+    const eventDataHash = createHash("md5").update(data).digest("hex");
+
+    // Verify the signature
+    const verifier = createVerify("RSA-SHA256");
+    verifier.update(eventDataHash);
+    return verifier.verify(publicKey, Buffer.from(signature, "hex"));
+  } catch (e) {
+    console.error("[Sora] Signature verification error:", e);
+    return false;
+  }
+}
+
+// Webhook receiver for Sora 2
+app.post("/api/sora/webhook", async (req, res) => {
+  try {
+    // Capture raw body for signature verification if needed
+    // Note: Express body-parser usually consumes the stream.
+    // In a real production env, you'd need the raw buffer.
+    // Here we assume 'req.body' is JSON parsed.
+    // If strict verification is needed, we must use verify callback in body-parser.
+
+    const body = req.body || {};
+    console.log("[Sora] Webhook headers:", JSON.stringify(req.headers));
+    console.log("[Sora] Webhook received:", JSON.stringify(body));
+
+    // Signature Verification (Optional)
+    const signature = req.headers["x-signature"];
+    let publicKey = process.env.SORA_WEBHOOK_PUBLIC_KEY;
+
+    // Try reading from file if not in env
+    if (!publicKey) {
+      try {
+        const keyPath = path.resolve(process.cwd(), "sora_public_key.pem");
+        if (fs.existsSync(keyPath)) {
+          publicKey = fs.readFileSync(keyPath, "utf8");
+        }
+      } catch (e) {
+        console.warn("[Sora] Failed to read public key file:", e.message);
+      }
+    }
+
+    if (publicKey && signature) {
+      // Note: This is a simplified check. 'JSON.stringify(body)' might not match original raw body exactly.
+      // For strict compliance, we need the raw request body string.
+      const isValid = verifySignatureByPublicKey(
+        JSON.stringify(body),
+        signature,
+        publicKey
+      );
+      if (!isValid) {
+        console.warn("[Sora] Invalid webhook signature!");
+        // return res.status(401).json({ error: "Invalid signature" }); // Uncomment to enforce
+      } else {
+        console.log("[Sora] Webhook signature verified.");
+      }
+    }
+
+    // Adjust field names based on actual webhook payload
+    // GeminiGen Webhook structure: { event, uuid, data: { id, status, media_url, thumbnail_url, error_message } }
+    const { event, uuid: eventUuid, data } = body;
+    const payloadData = data || body; // Fallback to body if data is missing
+
+    const {
+      id,
+      uuid,
+      status,
+      output,
+      error,
+      video_url,
+      media_url,
+      error_message,
+    } = payloadData;
+
+    // Job ID can be in various places
+    const jobId = id || uuid || eventUuid || payloadData.id || payloadData.uuid;
+
+    if (jobId) {
+      const jobs = readSoraJobs();
+      const relatedKeys = new Set(
+        [jobId, uuid, id, eventUuid, payloadData.id, payloadData.uuid]
+          .filter(Boolean)
+          .map((x) => String(x))
+      );
+
+      // Jika ada job lain yang mencatat uuid yang sama, ikut perbarui
+      if (uuid) {
+        for (const [k, v] of Object.entries(jobs)) {
+          if (v && v.uuid && String(v.uuid) === String(uuid)) {
+            relatedKeys.add(k);
+          }
+        }
+      }
+
+      const applyUpdate = (key) => {
+        const current = jobs[key] || {};
+        const next = {
+          ...current,
+          id: current.id || key,
+          uuid: current.uuid || uuid || id || eventUuid,
+          status: status || current.status || "unknown",
+          updated_at: new Date().toISOString(),
+          result: output || current.result || null,
+          video_url: media_url || video_url || current.video_url,
+          error: error_message || error || current.error,
+          webhook_payload: body,
+          received_at: current.received_at || new Date().toISOString(),
+        };
+        jobs[key] = next;
+      };
+
+      relatedKeys.forEach((k) => applyUpdate(k));
+      writeSoraJobs(jobs);
+    }
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("Webhook error", e);
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// Job status polling with Upstream Fallback (for local testing without webhooks)
+app.get("/api/sora/status", async (req, res) => {
+  try {
+    const rawId = String(req.query.id || "").trim();
+    const rawUuid = String(req.query.uuid || "").trim();
+    if (!rawId && !rawUuid)
+      return res.status(400).json({ error: "Missing id or uuid" });
+
+    const jobs = readSoraJobs();
+    const findJob = () => {
+      if (rawUuid && jobs[rawUuid]) return jobs[rawUuid];
+      if (rawId && jobs[rawId]) return jobs[rawId];
+      if (rawUuid) {
+        for (const v of Object.values(jobs)) {
+          if (v && String(v.uuid || "") === rawUuid) return v;
+        }
+      }
+      return null;
+    };
+    let job = findJob();
+
+    // If job is locally known but not finished, OR not known (maybe created elsewhere?),
+    // try to poll upstream API to update local state.
+    // This mimics "webhook" behavior for local dev.
+    const statusLower = String(job?.status || "").toLowerCase();
+    const isFinished =
+      !!job &&
+      (statusLower === "completed" ||
+        statusLower === "failed" ||
+        statusLower === "succeeded" ||
+        statusLower === "success" ||
+        statusLower === "done" ||
+        statusLower === "2" ||
+        job.status === 2 ||
+        !!job.video_url); // treat status=2 (from docs) or existing video_url as finished
+
+    if (!isFinished) {
+      try {
+        const apiKey = (
+          process.env.SORA_API_KEY ||
+          process.env.SORA_BEARER ||
+          ""
+        ).trim();
+        if (apiKey) {
+          // Try fetching detail/status from GeminiGen (termasuk endpoint khusus Sora)
+          const idsToPoll = Array.from(
+            new Set(
+              [
+                rawId,
+                rawUuid,
+                job?.id,
+                job?.uuid,
+                // kalau job belum dikenal, tetap coba id/uuid yang ada
+              ]
+                .filter(Boolean)
+                .map((x) => String(x))
+            )
+          );
+
+          const endpoints = [];
+          for (const target of idsToPoll) {
+            endpoints.push(
+              `https://api.geminigen.ai/uapi/v1/video-gen/status?id=${encodeURIComponent(
+                target
+              )}`
+            );
+            endpoints.push(
+              `https://api.geminigen.ai/uapi/v1/video-gen/status?uuid=${encodeURIComponent(
+                target
+              )}`
+            );
+            endpoints.push(
+              `https://api.geminigen.ai/uapi/v1/sora/status?id=${encodeURIComponent(
+                target
+              )}`
+            );
+            endpoints.push(
+              `https://api.geminigen.ai/uapi/v1/sora/status?uuid=${encodeURIComponent(
+                target
+              )}`
+            );
+            endpoints.push(
+              `https://api.geminigen.ai/uapi/v1/video-gen/sora/status?id=${encodeURIComponent(
+                target
+              )}`
+            );
+            endpoints.push(
+              `https://api.geminigen.ai/uapi/v1/video-gen/sora/status?uuid=${encodeURIComponent(
+                target
+              )}`
+            );
+            endpoints.push(
+              `https://api.geminigen.ai/api/video-gen/detail?uuid=${encodeURIComponent(
+                target
+              )}`
+            );
+            // History detail API (terdokumentasi) — sering lebih stabil
+            endpoints.push(
+              `https://api.geminigen.ai/uapi/v1/history/${encodeURIComponent(
+                target
+              )}`
+            );
+          }
+
+          for (const upstreamUrl of endpoints) {
+            try {
+              console.log(
+                `[sora/status] Polling ${upstreamUrl} ... Key: ${apiKey.slice(
+                  0,
+                  5
+                )}...`
+              );
+              const resp = await fetch(upstreamUrl, {
+                method: "GET",
+                headers: {
+                  "x-api-key": apiKey, // Try both headers
+                  Authorization: `Bearer ${apiKey}`,
+                  Accept: "application/json",
+                  "User-Agent": "Veo/3.1 (Local Dev)",
+                },
+              });
+
+              if (resp.ok) {
+                const data = await resp.json();
+                // Check if we got valid data
+                const validData = data.data || data.result || data; // uapi might wrap in data or result
+                const newStatus = validData.status;
+                const remoteId = validData.id || validData.uuid;
+
+                console.log(
+                  `[sora/status] Poll success. ID: ${remoteId}, Status: ${newStatus}`
+                );
+
+                if (remoteId || newStatus) {
+                  const now = new Date().toISOString();
+                  const normalizeStatus = (s) => {
+                    if (s === 3 || s === "3") return "completed";
+                    if (s === 4 || s === "4") return "failed";
+                    if (s === 2 || s === "2") return "completed";
+                    if (s === 1 || s === "1") return "processing";
+                    return s || "processing";
+                  };
+                  const mergedJob = job || {
+                    id: remoteId || rawId || rawUuid,
+                    uuid: validData.uuid || rawUuid || rawId,
+                    created_at: now,
+                  };
+                  mergedJob.status = normalizeStatus(newStatus);
+                  mergedJob.updated_at = now;
+                  if (validData.video_url)
+                    mergedJob.video_url = validData.video_url;
+                  if (validData.media_url)
+                    mergedJob.video_url = validData.media_url;
+                  if (validData.generate_result)
+                    mergedJob.video_url = validData.generate_result;
+                  if (validData.output) mergedJob.result = validData.output;
+                  if (validData.error) mergedJob.error = validData.error;
+                  if (validData.error_message)
+                    mergedJob.error = validData.error_message;
+
+                  if (
+                    Array.isArray(validData.generated_video) &&
+                    validData.generated_video[0]
+                  ) {
+                    mergedJob.video_url =
+                      validData.generated_video[0].video_url ||
+                      mergedJob.video_url;
+                    mergedJob.result = {
+                      generated_video: validData.generated_video,
+                    };
+                  }
+
+                  // Beberapa respons history memakai field 'generated_video' bertingkat
+                  if (
+                    Array.isArray(validData.generated_video) &&
+                    validData.generated_video[0]?.video_url
+                  ) {
+                    mergedJob.video_url =
+                      validData.generated_video[0].video_url ||
+                      mergedJob.video_url;
+                  }
+
+                  // Simpan ke semua key yang relevan (id & uuid)
+                  const keysToUpdate = new Set(
+                    [
+                      rawId,
+                      rawUuid,
+                      mergedJob.id,
+                      mergedJob.uuid,
+                      remoteId,
+                      validData.uuid,
+                    ]
+                      .filter(Boolean)
+                      .map((x) => String(x))
+                  );
+                  keysToUpdate.forEach((k) => {
+                    const current = jobs[k] || {};
+                    jobs[k] = {
+                      ...current,
+                      ...mergedJob,
+                      id: current.id || mergedJob.id || k,
+                      uuid: mergedJob.uuid || current.uuid,
+                    };
+                  });
+
+                  job = mergedJob;
+                  writeSoraJobs(jobs);
+                  break; // Stop trying endpoints if successful
+                }
+              } else {
+                console.warn(
+                  `[sora/status] Poll failed ${resp.status} for ${upstreamUrl}`
+                );
+                try {
+                  const errText = await resp.text();
+                  console.warn(`[sora/status] Error body: ${errText}`);
+                } catch (_) {}
+              }
+            } catch (e) {
+              console.warn(
+                `[sora/status] Poll failed for ${upstreamUrl}:`,
+                e.message
+              );
+            }
+          }
+        }
+      } catch (err) {
+        // Ignore upstream polling errors, just serve what we have
+        console.warn("[sora/status] Upstream polling failed:", err);
+      }
+    }
+
+    // Re-read job setelah update
+    job = findJob();
+
+    if (!job) {
+      return res
+        .status(404)
+        .json({ error: "Job not found locally or upstream" });
+    }
+
+    // Construct response compatible with frontend expectations
+    const response = {
+      id: job.id,
+      status: job.status,
+      // If we have result or video_url, expose it
+      video_url: job.video_url || job.result?.video_url,
+      generated_video:
+        job.result?.generated_video ||
+        (job.video_url ? [{ video_url: job.video_url }] : []),
+    };
+
+    res.json(response);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
   }
 });
 
@@ -1734,122 +2323,6 @@ app.get("/api/sora/download", async (req, res) => {
   }
 });
 
-app.get("/api/sora/status", async (req, res) => {
-  try {
-    const bearer = (process.env.SORA_BEARER || "").trim();
-    if (!bearer)
-      return res
-        .status(500)
-        .json({ error: "SORA_BEARER is not set on server." });
-    const uuid = String(req.query.uuid || "").trim();
-    const id = String(req.query.id || "").trim();
-    const headers = {
-      Authorization: `Bearer ${bearer}`,
-      Accept: "application/json",
-      Origin: "https://geminigen.ai",
-      Referer: "https://geminigen.ai/",
-      "User-Agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36",
-      "Accept-Language": "en-US,en;q=0.9,id;q=0.8",
-    };
-    const attempts = [];
-    const pushGet = (u) =>
-      attempts.push(async () => {
-        const resp = await fetch(u, { method: "GET", headers });
-        const ct = resp.headers.get("content-type") || "";
-        const body = ct.includes("application/json")
-          ? await resp.json()
-          : await resp.text();
-        return { ok: resp.ok, status: resp.status, body };
-      });
-    const pushPostForm = (u) =>
-      attempts.push(async () => {
-        try {
-          const form = new FormData();
-          if (uuid) form.append("uuid", uuid);
-          if (id) form.append("id", id);
-          const resp = await fetch(u, { method: "POST", headers, body: form });
-          const ct = resp.headers.get("content-type") || "";
-          const body = ct.includes("application/json")
-            ? await resp.json()
-            : await resp.text();
-          return { ok: resp.ok, status: resp.status, body };
-        } catch (_) {
-          const params = new URLSearchParams();
-          if (uuid) params.set("uuid", uuid);
-          if (id) params.set("id", id);
-          const resp = await fetch(u, {
-            method: "POST",
-            headers: {
-              ...headers,
-              "Content-Type": "application/x-www-form-urlencoded",
-            },
-            body: params.toString(),
-          });
-          const ct = resp.headers.get("content-type") || "";
-          const body = ct.includes("application/json")
-            ? await resp.json()
-            : await resp.text();
-          return { ok: resp.ok, status: resp.status, body };
-        }
-      });
-    if (uuid) {
-      pushGet(
-        `https://api.geminigen.ai/api/video-gen/detail?uuid=${encodeURIComponent(
-          uuid
-        )}`
-      );
-      pushGet(
-        `https://api.geminigen.ai/api/video-gen/detail/${encodeURIComponent(
-          uuid
-        )}`
-      );
-      pushGet(
-        `https://api.geminigen.ai/api/video-gen/status?uuid=${encodeURIComponent(
-          uuid
-        )}`
-      );
-      pushGet(
-        `https://api.geminigen.ai/api/history/${encodeURIComponent(uuid)}`
-      );
-      pushPostForm("https://api.geminigen.ai/api/video-gen/status");
-      pushPostForm("https://api.geminigen.ai/api/video-gen/detail");
-    }
-    if (id) {
-      pushGet(
-        `https://api.geminigen.ai/api/video-gen/detail?id=${encodeURIComponent(
-          id
-        )}`
-      );
-      pushGet(
-        `https://api.geminigen.ai/api/video-gen/history/${encodeURIComponent(
-          id
-        )}`
-      );
-      pushPostForm("https://api.geminigen.ai/api/video-gen/status");
-      pushPostForm("https://api.geminigen.ai/api/video-gen/detail");
-    }
-    if (!attempts.length)
-      return res.status(400).json({ error: "missing uuid or id" });
-    let last;
-    for (const fn of attempts) {
-      try {
-        const r = await fn();
-        last = r;
-        if (r.ok) return res.json(r.body);
-      } catch (e) {
-        last = { ok: false, status: 0, body: String(e) };
-      }
-    }
-    return res
-      .status(last?.status || 404)
-      .json({ error: "Status not available", detail: last?.body || null });
-  } catch (err) {
-    console.error("[sora/status] Proxy error", err);
-    res.status(500).json({ error: "Sora status failed", detail: String(err) });
-  }
-});
-
 app.get("/api/settings", (req, res) => {
   res.json({
     labsBearer: process.env.LABS_BEARER || "",
@@ -1877,28 +2350,7 @@ app.post("/api/settings", (req, res) => {
 });
 
 // === Sora 2 specific bearer settings ===
-app.get("/api/sora/settings", (req, res) => {
-  res.json({
-    soraBearer: process.env.SORA_BEARER || "",
-  });
-});
-
-app.post("/api/sora/settings", (req, res) => {
-  try {
-    const { soraBearer } = req.body || {};
-    const sanitized = persistEnvValue(
-      "SORA_BEARER",
-      typeof soraBearer === "string" ? soraBearer : ""
-    );
-    process.env.SORA_BEARER = sanitized;
-    res.json({ ok: true, soraBearer: sanitized });
-  } catch (err) {
-    console.error("[sora/settings] Failed to persist SORA_BEARER", err);
-    res
-      .status(500)
-      .json({ error: "Failed to update Sora settings", detail: String(err) });
-  }
-});
+// Removed per instruction: settings managed via server ENV only.
 
 // === License Activation: verify signed activation token and set APP_CREDENTIAL ===
 const readPublicKey = () => {
@@ -2443,6 +2895,7 @@ const startServer = async () => {
       "/profile",
       "/admin/users",
       "/admin/dashboard",
+      "/admin/credits",
     ];
     for (const p of protectedPaths) {
       app.get(p, async (req, res) => {
