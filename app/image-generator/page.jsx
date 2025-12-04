@@ -109,20 +109,23 @@ export default function ImageGeneratorPage() {
           window.location.href = "/login";
           return;
         }
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-        let p = String(user?.user_metadata?.plan || "").toLowerCase();
-        if (user?.id) {
+        let p = "";
+        try {
+          const token = String(session.access_token || "");
+          if (token) {
+            const resp = await fetch("/api/me/plan", {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            const d = await resp.json();
+            p = String(d?.plan || "").toLowerCase();
+          }
+        } catch (_) {}
+        if (!p) {
           try {
-            const { data: profile } = await supabase
-              .from("users")
-              .select("plan")
-              .eq("id", user.id)
-              .single();
-            if (profile && typeof profile.plan === "string") {
-              p = String(profile.plan || p || "").toLowerCase();
-            }
+            const {
+              data: { user },
+            } = await supabase.auth.getUser();
+            p = String(user?.user_metadata?.plan || "").toLowerCase();
           } catch (_) {}
         }
         if (!p) p = "free";

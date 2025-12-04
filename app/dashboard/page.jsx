@@ -27,6 +27,8 @@ export default function DashboardPage() {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const userMenuRef = useRef(null);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [credits, setCredits] = useState(0);
+  const [creditScope, setCreditScope] = useState("none");
 
   useEffect(() => {
     try {
@@ -60,6 +62,23 @@ export default function DashboardPage() {
       setNow(new Date().toISOString());
     } catch (_) {}
   }, []);
+
+  const refreshCredits = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = String(session?.access_token || "");
+      if (!token) return;
+      const r = await fetch("/api/me/credits", { headers: { Authorization: `Bearer ${token}` } });
+      const d = await r.json();
+      if (r.ok) {
+        setCredits(Number(d?.credits || 0));
+        setCreditScope(String(d?.scope || "none"));
+      }
+    } catch (_) {}
+  };
+  useEffect(() => {
+    if (plan === "veo_sora_unlimited") refreshCredits();
+  }, [plan]);
 
   // Dengarkan event realtime plan yang dipush dari PlanSync (SSE)
   useEffect(() => {
@@ -346,6 +365,28 @@ export default function DashboardPage() {
           style={{ display: "flex", gap: 8, alignItems: "center" }}
           ref={userMenuRef}
         >
+          {plan === "veo_sora_unlimited" ? (
+            <button
+              className="settings-btn"
+              title="Credits"
+              onClick={(e) => e.preventDefault()}
+            >
+              <span aria-hidden="true">💳</span>
+              <span
+                style={{
+                  marginLeft: 6,
+                  padding: "2px 6px",
+                  borderRadius: 10,
+                  background: "rgba(255,255,255,0.08)",
+                  border: "1px solid rgba(255,255,255,0.12)",
+                  fontSize: 12,
+                  color: "#f8fafc",
+                }}
+              >
+                {new Intl.NumberFormat("id-ID").format(credits)}
+              </span>
+            </button>
+          ) : null}
           <a
             href="/prompt-tunggal"
             className="settings-btn"

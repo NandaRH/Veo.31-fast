@@ -10,6 +10,11 @@ export default function AdminDashboardPage() {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const userMenuRef = useRef(null);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [soraCredits, setSoraCredits] = useState(0);
+  const [showCreditModal, setShowCreditModal] = useState(false);
+  const [creditAmount, setCreditAmount] = useState("");
+  const [creditStatus, setCreditStatus] = useState("");
+  const [creditBusy, setCreditBusy] = useState(false);
   const pathname = usePathname();
 
   useEffect(() => {
@@ -30,6 +35,17 @@ export default function AdminDashboardPage() {
         }
         const nm = String(session.user.user_metadata?.name || "").trim();
         if (nm) setUserName(nm);
+        try {
+          const token = String(session.access_token || "");
+          if (token) {
+            const r = await fetch("/api/admin/credits", {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            const d = await r.json();
+            const n = Number(d?.credits?.sora2 || 0);
+            if (Number.isFinite(n)) setSoraCredits(n);
+          }
+        } catch (_) {}
         try {
           const m = document.cookie.match(/(?:^|; )plan=([^;]+)/);
           const p = (m && m[1] ? decodeURIComponent(m[1]) : "").toLowerCase();
@@ -81,6 +97,30 @@ export default function AdminDashboardPage() {
           style={{ display: "flex", gap: 8, alignItems: "center" }}
           ref={userMenuRef}
         >
+          <button
+            className="settings-btn"
+            title="Credits Sora 2"
+            onClick={(e) => {
+              e.preventDefault();
+              setShowCreditModal(true);
+            }}
+          >
+            <span aria-hidden="true">💳</span>
+            <span className="sr-only">Credits Sora 2</span>
+            <span
+              style={{
+                marginLeft: 6,
+                padding: "2px 6px",
+                borderRadius: 10,
+                background: "rgba(255,255,255,0.08)",
+                border: "1px solid rgba(255,255,255,0.12)",
+                fontSize: 12,
+                color: "#f8fafc",
+              }}
+            >
+              {new Intl.NumberFormat("id-ID").format(soraCredits)}
+            </span>
+          </button>
           <a
             href="/prompt-tunggal"
             className="settings-btn"
@@ -270,6 +310,100 @@ export default function AdminDashboardPage() {
                 }}
               >
                 Ya, Logout
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showCreditModal && (
+        <div
+          className="modal show"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowCreditModal(false);
+          }}
+          style={{ backdropFilter: "blur(10px)" }}
+        >
+          <div className="modal-content" style={{ maxWidth: 420 }}>
+            <div className="modal-header">
+              <div style={{ fontWeight: 700, color: "#f4d03f" }}>
+                Tambah Credits Sora 2
+              </div>
+              <button
+                className="btn ghost"
+                onClick={() => setShowCreditModal(false)}
+              >
+                Tutup
+              </button>
+            </div>
+            <div
+              className="modal-body"
+              style={{ flexDirection: "column", gap: 10 }}
+            >
+              <div style={{ color: "#e2e8f0", fontWeight: 600 }}>
+                Isi jumlah credit yang ingin ditambahkan.
+              </div>
+              <input
+                type="number"
+                className="dropdown"
+                placeholder="Masukkan angka"
+                value={creditAmount}
+                onChange={(e) => setCreditAmount(e.target.value)}
+              />
+              <div style={{ color: "#94a3b8", fontSize: 13 }}>
+                Saldo saat ini: {new Intl.NumberFormat("id-ID").format(soraCredits)}
+              </div>
+              <div style={{ color: "#94a3b8", fontSize: 13 }}>{creditStatus}</div>
+            </div>
+            <div className="modal-footer" style={{ justifyContent: "flex-end", gap: 10 }}>
+              <button className="btn ghost" onClick={() => setShowCreditModal(false)}>
+                Batal
+              </button>
+              <button
+                className="btn primary"
+                disabled={creditBusy}
+                onClick={() => {
+                  (async () => {
+                    try {
+                      setCreditBusy(true);
+                      setCreditStatus("Memproses...");
+                      const amt = Number(creditAmount || 0);
+                      if (!Number.isFinite(amt)) {
+                        setCreditStatus("Jumlah tidak valid");
+                        setCreditBusy(false);
+                        return;
+                      }
+                      const {
+                        data: { session },
+                      } = await supabase.auth.getSession();
+                      const token = String(session?.access_token || "");
+                      const resp = await fetch("/api/admin/credits/add", {
+                        method: "POST",
+                        headers: {
+                          "Content-Type": "application/json",
+                          Authorization: `Bearer ${token}`,
+                        },
+                        body: JSON.stringify({ amount: amt }),
+                      });
+                      const data = await resp.json();
+                      if (!resp.ok) {
+                        setCreditStatus(String(data?.error || "Gagal"));
+                        setCreditBusy(false);
+                        return;
+                      }
+                      const n = Number(data?.credits?.sora2 || 0);
+                      setSoraCredits(Number.isFinite(n) ? n : 0);
+                      setCreditStatus("Berhasil ditambahkan");
+                      setCreditAmount("");
+                    } catch (e) {
+                      setCreditStatus(String(e?.message || e || ""));
+                    } finally {
+                      setCreditBusy(false);
+                    }
+                  })();
+                }}
+              >
+                Tambah
               </button>
             </div>
           </div>

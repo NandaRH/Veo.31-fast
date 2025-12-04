@@ -21,8 +21,17 @@ export default function AdminUsersPage() {
   const [detailUser, setDetailUser] = useState(null);
   const [search, setSearch] = useState("");
   const [filterPlan, setFilterPlan] = useState("all");
-  const [credits, setCredits] = useState(null);
-  const [creditLoading, setCreditLoading] = useState(false);
+  const [soraCredits, setSoraCredits] = useState(0);
+  const [showCreditModal, setShowCreditModal] = useState(false);
+  const [creditAmount, setCreditAmount] = useState("");
+  const [creditStatus, setCreditStatus] = useState("");
+  const [creditBusy, setCreditBusy] = useState(false);
+  const [grantAmount, setGrantAmount] = useState(0);
+  const [grantStatus, setGrantStatus] = useState("");
+  const [revokeAmount, setRevokeAmount] = useState(0);
+  const [revokeStatus, setRevokeStatus] = useState("");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
   const pathname = usePathname();
 
   useEffect(() => {
@@ -41,6 +50,17 @@ export default function AdminUsersPage() {
           window.location.href = "/login";
           return;
         }
+        try {
+          const token = String(session.access_token || "");
+          if (token) {
+            const r = await fetch("/api/admin/credits", {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            const d = await r.json();
+            const n = Number(d?.credits?.sora2 || 0);
+            if (Number.isFinite(n)) setSoraCredits(n);
+          }
+        } catch (_) {}
       } catch (_) {}
     })();
     (async () => {
@@ -51,22 +71,6 @@ export default function AdminUsersPage() {
           await loadUsers(s);
         }
       } catch (_) {}
-    })();
-    (async () => {
-      try {
-        setCreditLoading(true);
-        const resp = await fetch("/api/me/credits");
-        const data = await resp.json();
-        if (resp.ok && data && typeof data.balance !== "undefined") {
-          setCredits(Number(data.balance || 0));
-        } else {
-          setCredits(null);
-        }
-      } catch (_) {
-        setCredits(null);
-      } finally {
-        setCreditLoading(false);
-      }
     })();
   }, []);
 
@@ -89,6 +93,7 @@ export default function AdminUsersPage() {
         return;
       }
       setItems(Array.isArray(data?.users) ? data.users : []);
+      setPage(1);
       setStatus("");
     } catch (e) {
       setStatus(String(e?.message || e));
@@ -130,7 +135,9 @@ export default function AdminUsersPage() {
       return;
     }
     const ok = window.confirm(
-      `Hapus akun untuk ${user.email || "user"}? Tindakan ini tidak dapat dibatalkan.`
+      `Hapus akun untuk ${
+        user.email || "user"
+      }? Tindakan ini tidak dapat dibatalkan.`
     );
     if (!ok) return;
     try {
@@ -184,6 +191,19 @@ export default function AdminUsersPage() {
     return true;
   });
 
+  useEffect(() => {
+    // Reset ke halaman pertama kalau filter atau pencarian berubah
+    setPage(1);
+  }, [search, filterPlan]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredItems.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const startIndex = (currentPage - 1) * PAGE_SIZE;
+  const pageItems = filteredItems.slice(
+    startIndex,
+    startIndex + PAGE_SIZE
+  );
+
   return (
     <div
       className="app-shell prompt-shell"
@@ -202,33 +222,30 @@ export default function AdminUsersPage() {
           style={{ display: "flex", gap: 8, alignItems: "center" }}
           ref={userMenuRef}
         >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              padding: "10px 12px",
-              borderRadius: 12,
-              background:
-                "linear-gradient(135deg, rgba(255,215,0,0.16), rgba(255,215,0,0.08))",
-              border: "1px solid rgba(255,215,0,0.25)",
-              boxShadow: "0 0 16px rgba(255,215,0,0.12)",
-              minWidth: 120,
-              justifyContent: "center",
+          <button
+            className="settings-btn"
+            title="Credits Sora 2"
+            onClick={(e) => {
+              e.preventDefault();
+              setShowCreditModal(true);
             }}
-            title="Saldo kredit"
           >
-            <span aria-hidden="true" style={{ fontSize: 18 }}>
-              💳
+            <span aria-hidden="true">💳</span>
+            <span className="sr-only">Credits Sora 2</span>
+            <span
+              style={{
+                marginLeft: 6,
+                padding: "2px 6px",
+                borderRadius: 10,
+                background: "rgba(255,255,255,0.08)",
+                border: "1px solid rgba(255, 255, 255, 0.12)",
+                fontSize: 12,
+                color: "#f8fafc",
+              }}
+            >
+              {new Intl.NumberFormat("id-ID").format(soraCredits)}
             </span>
-            <span style={{ color: "#f8fafc", fontWeight: 700, fontSize: 14 }}>
-              {creditLoading
-                ? "—"
-                : credits === null
-                ? "N/A"
-                : credits.toLocaleString("id-ID")}
-            </span>
-          </div>
+          </button>
           <a
             href="/prompt-tunggal"
             className="settings-btn"
@@ -291,19 +308,6 @@ export default function AdminUsersPage() {
                 >
                   <span aria-hidden="true">👥</span>
                   <span>Manage Users</span>
-                </button>
-              ) : null}
-              {pathname !== "/admin/credits" ? (
-                <button
-                  className="user-menu-item"
-                  type="button"
-                  onClick={() => {
-                    window.location.href = "/admin/credits";
-                    setShowUserMenu(false);
-                  }}
-                >
-                  <span aria-hidden="true">💳</span>
-                  <span>Credits</span>
                 </button>
               ) : null}
               <div className="user-menu-divider"></div>
@@ -397,74 +401,171 @@ export default function AdminUsersPage() {
         </div>
         <div className="admin-table-wrap">
           <table className="admin-table">
-          <thead>
-            <tr>
-              <th
-                style={{ textAlign: "left", color: "#f4d03f", fontWeight: 700 }}
-              >
-                Email
-              </th>
-              <th
-                style={{ textAlign: "left", color: "#f4d03f", fontWeight: 700 }}
-              >
-                Nama
-              </th>
-              <th
-                style={{ textAlign: "left", color: "#f4d03f", fontWeight: 700 }}
-              >
-                Plan
-              </th>
-              <th
-                style={{ textAlign: "left", color: "#f4d03f", fontWeight: 700 }}
-              >
-                Expire
-              </th>
-              <th
-                style={{ textAlign: "left", color: "#f4d03f", fontWeight: 700 }}
-              >
-                Aksi
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredItems.map((u) => (
-              <tr key={u.id} className="admin-row">
-                <td className="admin-cell primary">{u.email}</td>
-                <td className="admin-cell">{u.full_name || "-"}</td>
-                <td className="admin-cell">
-                  <select
-                    className="dropdown"
-                    value={u.plan || "free"}
-                    onChange={(e) => updatePlan(u.id, e.target.value)}
-                  >
-                    {PLANS.map((p) => (
-                      <option key={p} value={p}>
-                        {p}
-                      </option>
-                    ))}
-                  </select>
-                  <div className="admin-plan-tag">
-                    {String(u.plan || "").toLowerCase() === "monthly"
-                      ? formatExpiry(u)
-                      : String(u.plan || "free")}
-                  </div>
-                </td>
-                <td className="admin-cell">
-                  <span className="admin-expiry">{formatExpiry(u)}</span>
-                </td>
-                <td className="admin-cell actions">
-                  <button
-                    className="btn ghost"
-                    type="button"
-                    onClick={() => setDetailUser(u)}
-                  >
-                    Detail
-                  </button>
-                </td>
+            <thead>
+              <tr>
+                <th
+                  style={{
+                    textAlign: "left",
+                    color: "#f4d03f",
+                    fontWeight: 700,
+                  }}
+                >
+                  Email
+                </th>
+                <th
+                  style={{
+                    textAlign: "left",
+                    color: "#f4d03f",
+                    fontWeight: 700,
+                  }}
+                >
+                  Nama
+                </th>
+                <th
+                  style={{
+                    textAlign: "left",
+                    color: "#f4d03f",
+                    fontWeight: 700,
+                  }}
+                >
+                  Plan
+                </th>
+                <th
+                  style={{
+                    textAlign: "left",
+                    color: "#f4d03f",
+                    fontWeight: 700,
+                  }}
+                >
+                  Expire
+                </th>
+                <th
+                  style={{
+                    textAlign: "left",
+                    color: "#f4d03f",
+                    fontWeight: 700,
+                  }}
+                >
+                  Credits
+                </th>
+                <th
+                  style={{
+                    textAlign: "left",
+                    color: "#f4d03f",
+                    fontWeight: 700,
+                  }}
+                >
+                  Aksi
+                </th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {pageItems.map((u) => (
+                <tr key={u.id} className="admin-row">
+                  <td className="admin-cell primary">{u.email}</td>
+                  <td className="admin-cell">{u.full_name || "-"}</td>
+                  <td className="admin-cell">
+                    <select
+                      className="dropdown"
+                      value={u.plan || "free"}
+                      onChange={(e) => updatePlan(u.id, e.target.value)}
+                    >
+                      {PLANS.map((p) => (
+                        <option key={p} value={p}>
+                          {p}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="admin-plan-tag">
+                      {String(u.plan || "").toLowerCase() === "monthly"
+                        ? formatExpiry(u)
+                        : String(u.plan || "free")}
+                    </div>
+                  </td>
+                  <td className="admin-cell">
+                    <span className="admin-expiry">{formatExpiry(u)}</span>
+                  </td>
+                  <td className="admin-cell">
+                    <span className="admin-expiry">
+                      {(() => {
+                        const plan = String(u.plan || "").toLowerCase();
+                        if (plan === "veo_sora_unlimited") {
+                          const n = Number(u.sora2_credits || 0);
+                          const v = Number.isFinite(n) ? n : 0;
+                          return new Intl.NumberFormat("id-ID").format(v);
+                        } else if (plan === "admin") {
+                          return new Intl.NumberFormat("id-ID").format(
+                            soraCredits
+                          );
+                        }
+                        return "tidak tersedia";
+                      })()}
+                    </span>
+                  </td>
+                  <td className="admin-cell actions">
+                    <button
+                      className="btn ghost"
+                      type="button"
+                      onClick={() => setDetailUser(u)}
+                    >
+                      Detail
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {filteredItems.length > 0 && (
+            <div
+              style={{
+                marginTop: 12,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 12,
+              }}
+            >
+              <div className="settings-help" style={{ fontSize: 12 }}>
+                Menampilkan{" "}
+                {`${startIndex + 1}–${Math.min(
+                  startIndex + PAGE_SIZE,
+                  filteredItems.length
+                )} dari ${filteredItems.length} user`}
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  flexWrap: "wrap",
+                }}
+              >
+                <button
+                  type="button"
+                  className="btn ghost"
+                  disabled={currentPage <= 1}
+                  onClick={() =>
+                    setPage((p) => Math.max(1, p - 1))
+                  }
+                >
+                  Sebelumnya
+                </button>
+                <span className="settings-help" style={{ fontSize: 12 }}>
+                  Halaman {currentPage} / {totalPages}
+                </span>
+                <button
+                  type="button"
+                  className="btn ghost"
+                  disabled={currentPage >= totalPages}
+                  onClick={() =>
+                    setPage((p) => Math.min(totalPages, p + 1))
+                  }
+                >
+                  Berikutnya
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </main>
       {showLogoutModal && (
@@ -575,7 +676,9 @@ export default function AdminUsersPage() {
                 <div style={{ fontSize: 12, color: "#9ca3af" }}>
                   Status Expire
                 </div>
-                <div style={{ fontWeight: 600 }}>{formatExpiry(detailUser)}</div>
+                <div style={{ fontWeight: 600 }}>
+                  {formatExpiry(detailUser)}
+                </div>
               </div>
               {(() => {
                 const veo = Number(detailUser.veo_count || 0);
@@ -591,10 +694,7 @@ export default function AdminUsersPage() {
                     <div className="admin-usage-row">
                       <span>Veo</span>
                       <div className="admin-usage-bar">
-                        <div
-                          className="fill veo"
-                          style={{ width: pct(veo) }}
-                        />
+                        <div className="fill veo" style={{ width: pct(veo) }} />
                       </div>
                       <span className="count">{veo}</span>
                     </div>
@@ -621,6 +721,199 @@ export default function AdminUsersPage() {
                   </div>
                 );
               })()}
+              {String(detailUser.plan || "").toLowerCase() ===
+              "veo_sora_unlimited" ? (
+                <div style={{ marginTop: 8 }}>
+                  <div style={{ fontSize: 12, color: "#9ca3af" }}>
+                    Tambah Credits ke User
+                  </div>
+                  <div
+                    style={{ display: "flex", gap: 8, alignItems: "center" }}
+                  >
+                    <input
+                      type="number"
+                      className="dropdown"
+                      placeholder="Masukkan jumlah"
+                      value={grantAmount}
+                      onChange={(e) =>
+                        setGrantAmount(Number(e.target.value || 0))
+                      }
+                    />
+                    <button
+                      className="btn primary"
+                      disabled={creditBusy}
+                      onClick={() => {
+                        (async () => {
+                          try {
+                            setGrantStatus("Memproses...");
+                            setCreditBusy(true);
+                            const amt = Number(grantAmount || 0);
+                            if (!Number.isFinite(amt) || amt <= 0) {
+                              setGrantStatus("Jumlah tidak valid");
+                              setCreditBusy(false);
+                              return;
+                            }
+                            const {
+                              data: { session },
+                            } = await supabase.auth.getSession();
+                            const token = String(session?.access_token || "");
+                            const controller = new AbortController();
+                            const t = setTimeout(
+                              () => controller.abort(),
+                              60000
+                            );
+                            const resp = await fetch(
+                              `/api/admin/users/${detailUser.id}/credits/grant`,
+                              {
+                                method: "POST",
+                                headers: {
+                                  "Content-Type": "application/json",
+                                  Authorization: `Bearer ${token}`,
+                                  "x-admin-secret": secret,
+                                },
+                                body: JSON.stringify({ amount: amt }),
+                                signal: controller.signal,
+                              }
+                            ).finally(() => clearTimeout(t));
+                            const data = await resp.json();
+                            if (!resp.ok) {
+                              setGrantStatus(String(data?.error || "Gagal"));
+                              setCreditBusy(false);
+                              return;
+                            }
+                            const a = Number(data?.admin_credits || 0);
+                            const uc = Number(data?.user_credits || 0);
+                            setSoraCredits(Number.isFinite(a) ? a : 0);
+                            setItems((prev) =>
+                              prev.map((x) =>
+                                x.id === detailUser.id
+                                  ? { ...x, sora2_credits: uc }
+                                  : x
+                              )
+                            );
+                            setDetailUser((prev) => ({
+                              ...prev,
+                              sora2_credits: uc,
+                            }));
+                            setGrantStatus("Berhasil ditambahkan");
+                            setGrantAmount(0);
+                          } catch (e) {
+                            if (e && e.name === "AbortError") {
+                              setGrantStatus(
+                                "Timeout jaringan, silakan coba lagi."
+                              );
+                            } else {
+                              setGrantStatus(String(e?.message || e || ""));
+                            }
+                          } finally {
+                            setCreditBusy(false);
+                          }
+                        })();
+                      }}
+                    >
+                      Tambah ke User
+                    </button>
+                  </div>
+                  <div className="settings-help" style={{ marginTop: 6 }}>
+                    {grantStatus}
+                  </div>
+                  <div
+                    style={{ fontSize: 12, color: "#9ca3af", marginTop: 12 }}
+                  >
+                    Kurangi Credits dari User
+                  </div>
+                  <div
+                    style={{ display: "flex", gap: 8, alignItems: "center" }}
+                  >
+                    <input
+                      type="number"
+                      className="dropdown"
+                      placeholder="Masukkan jumlah"
+                      value={revokeAmount}
+                      onChange={(e) =>
+                        setRevokeAmount(Number(e.target.value || 0))
+                      }
+                    />
+                    <button
+                      className="btn danger"
+                      disabled={creditBusy}
+                      onClick={() => {
+                        (async () => {
+                          try {
+                            setRevokeStatus("Memproses...");
+                            setCreditBusy(true);
+                            const amt = Number(revokeAmount || 0);
+                            if (!Number.isFinite(amt) || amt <= 0) {
+                              setRevokeStatus("Jumlah tidak valid");
+                              setCreditBusy(false);
+                              return;
+                            }
+                            const {
+                              data: { session },
+                            } = await supabase.auth.getSession();
+                            const token = String(session?.access_token || "");
+                            const controller = new AbortController();
+                            const t = setTimeout(
+                              () => controller.abort(),
+                              60000
+                            );
+                            const resp = await fetch(
+                              `/api/admin/users/${detailUser.id}/credits/revoke`,
+                              {
+                                method: "POST",
+                                headers: {
+                                  "Content-Type": "application/json",
+                                  Authorization: `Bearer ${token}`,
+                                  "x-admin-secret": secret,
+                                },
+                                body: JSON.stringify({ amount: amt }),
+                                signal: controller.signal,
+                              }
+                            ).finally(() => clearTimeout(t));
+                            const data = await resp.json();
+                            if (!resp.ok) {
+                              setRevokeStatus(String(data?.error || "Gagal"));
+                              setCreditBusy(false);
+                              return;
+                            }
+                            const a = Number(data?.admin_credits || 0);
+                            const uc = Number(data?.user_credits || 0);
+                            setSoraCredits(Number.isFinite(a) ? a : 0);
+                            setItems((prev) =>
+                              prev.map((x) =>
+                                x.id === detailUser.id
+                                  ? { ...x, sora2_credits: uc }
+                                  : x
+                              )
+                            );
+                            setDetailUser((prev) => ({
+                              ...prev,
+                              sora2_credits: uc,
+                            }));
+                            setRevokeStatus("Berhasil dikurangi");
+                            setRevokeAmount(0);
+                          } catch (e) {
+                            if (e && e.name === "AbortError") {
+                              setRevokeStatus(
+                                "Timeout jaringan, silakan coba lagi."
+                              );
+                            } else {
+                              setRevokeStatus(String(e?.message || e || ""));
+                            }
+                          } finally {
+                            setCreditBusy(false);
+                          }
+                        })();
+                      }}
+                    >
+                      Kurangi dari User
+                    </button>
+                  </div>
+                  <div className="settings-help" style={{ marginTop: 6 }}>
+                    {revokeStatus}
+                  </div>
+                </div>
+              ) : null}
             </div>
             <div
               className="modal-footer"
@@ -641,6 +934,108 @@ export default function AdminUsersPage() {
                 }
               >
                 Delete Akun
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {showCreditModal && (
+        <div
+          className="modal show"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowCreditModal(false);
+          }}
+          style={{ backdropFilter: "blur(10px)" }}
+        >
+          <div className="modal-content" style={{ maxWidth: 420 }}>
+            <div className="modal-header">
+              <div style={{ fontWeight: 700, color: "#f4d03f" }}>
+                Tambah Credits Sora 2
+              </div>
+              <button
+                className="btn ghost"
+                onClick={() => setShowCreditModal(false)}
+              >
+                Tutup
+              </button>
+            </div>
+            <div
+              className="modal-body"
+              style={{ flexDirection: "column", gap: 10 }}
+            >
+              <div style={{ color: "#e2e8f0", fontWeight: 600 }}>
+                Isi jumlah credit yang ingin ditambahkan.
+              </div>
+              <input
+                type="number"
+                className="dropdown"
+                placeholder="Masukkan angka"
+                value={creditAmount}
+                onChange={(e) => setCreditAmount(e.target.value)}
+              />
+              <div style={{ color: "#94a3b8", fontSize: 13 }}>
+                Saldo saat ini:{" "}
+                {new Intl.NumberFormat("id-ID").format(soraCredits)}
+              </div>
+              <div style={{ color: "#94a3b8", fontSize: 13 }}>
+                {creditStatus}
+              </div>
+            </div>
+            <div
+              className="modal-footer"
+              style={{ justifyContent: "flex-end", gap: 10 }}
+            >
+              <button
+                className="btn ghost"
+                onClick={() => setShowCreditModal(false)}
+              >
+                Batal
+              </button>
+              <button
+                className="btn primary"
+                disabled={creditBusy}
+                onClick={() => {
+                  (async () => {
+                    try {
+                      setCreditBusy(true);
+                      setCreditStatus("Memproses...");
+                      const amt = Number(creditAmount || 0);
+                      if (!Number.isFinite(amt)) {
+                        setCreditStatus("Jumlah tidak valid");
+                        setCreditBusy(false);
+                        return;
+                      }
+                      const {
+                        data: { session },
+                      } = await supabase.auth.getSession();
+                      const token = String(session?.access_token || "");
+                      const resp = await fetch("/api/admin/credits/add", {
+                        method: "POST",
+                        headers: {
+                          "Content-Type": "application/json",
+                          Authorization: `Bearer ${token}`,
+                        },
+                        body: JSON.stringify({ amount: amt }),
+                      });
+                      const data = await resp.json();
+                      if (!resp.ok) {
+                        setCreditStatus(String(data?.error || "Gagal"));
+                        setCreditBusy(false);
+                        return;
+                      }
+                      const n = Number(data?.credits?.sora2 || 0);
+                      setSoraCredits(Number.isFinite(n) ? n : 0);
+                      setCreditStatus("Berhasil ditambahkan");
+                      setCreditAmount("");
+                    } catch (e) {
+                      setCreditStatus(String(e?.message || e || ""));
+                    } finally {
+                      setCreditBusy(false);
+                    }
+                  })();
+                }}
+              >
+                Tambah
               </button>
             </div>
           </div>

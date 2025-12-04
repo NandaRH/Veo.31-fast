@@ -9,6 +9,7 @@ export default function LanggananPage() {
   const [isFree, setIsFree] = useState(false);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [plan, setPlan] = useState("free");
+  const [credits, setCredits] = useState(0);
 
   useEffect(() => {
     try {
@@ -25,6 +26,29 @@ export default function LanggananPage() {
     document.addEventListener("click", handleClickOutside);
     return () => document.removeEventListener("click", handleClickOutside);
   }, []);
+
+  const refreshCredits = async () => {
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const token = String(session?.access_token || "");
+      if (!token) return;
+      const rMe = await fetch("/api/me/credits", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const dM = await rMe.json();
+      if (rMe.ok) {
+        setCredits(Number(dM?.credits || 0));
+      }
+    } catch (_) {}
+  };
+  useEffect(() => {
+    refreshCredits();
+  }, []);
+  useEffect(() => {
+    if (plan === "veo_sora_unlimited") refreshCredits();
+  }, [plan]);
 
   useEffect(() => {
     (async () => {
@@ -205,17 +229,6 @@ export default function LanggananPage() {
               ? "Paket terlengkap, aktif selamanya"
               : "Berlangganan per bulan dengan fitur penuh"}
           </div>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <button className="btn primary" type="button">
-              Ubah Paket
-            </button>
-            <button className="btn ghost" type="button">
-              Batalkan Langganan
-            </button>
-            <button className="btn ghost" type="button">
-              Kelola Pembayaran
-            </button>
-          </div>
         </div>
 
         {plan !== "veo_sora_unlimited" && (
@@ -345,60 +358,48 @@ export default function LanggananPage() {
           <div className="feature-title" style={{ fontSize: 16 }}>
             Add-on & Credit
           </div>
-          <div className="feature-sub" style={{ fontSize: 14 }}>
-            Tambah credit ekstra, seat tim, atau kapasitas render sesuai
-            kebutuhan.
-          </div>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <button className="btn primary" type="button">
-              Tambah Credit
-            </button>
-            <button className="btn ghost" type="button">
-              Kelola Add-on
-            </button>
-          </div>
-        </div>
-
-        <div className="feature-card" style={{ gap: 10 }}>
-          <div className="feature-title" style={{ fontSize: 16 }}>
-            Riwayat Tagihan
-          </div>
           <div
+            className="feature-sub"
             style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-              gap: 8,
+              fontSize: 14,
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
             }}
           >
-            {["Aug 2024", "Jul 2024", "Jun 2024"].map((bulan) => (
-              <div
-                key={bulan}
+            <span>
+              Tambah credit ekstra, seat tim, atau kapasitas render sesuai
+              kebutuhan.
+            </span>
+            {plan === "veo_sora_unlimited" && (
+              <span
                 style={{
-                  padding: 12,
-                  borderRadius: 12,
-                  border: "1px solid rgba(255,215,0,0.1)",
-                  background: "rgba(15,12,10,0.5)",
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  color: "#f5e6d3",
+                  marginLeft: 10,
+                  padding: "2px 8px",
+                  borderRadius: 10,
+                  background: "rgba(255,255,255,0.08)",
+                  border: "1px solid rgba(255,255,255,0.12)",
+                  fontSize: 12,
+                  color: "#f8fafc",
                 }}
               >
-                <div>
-                  <div style={{ fontWeight: 700 }}>{bulan}</div>
-                  <div style={{ fontSize: 12, color: "#b8a97a" }}>
-                    Paket Pro · Berhasil
-                  </div>
-                </div>
-                <span style={{ color: "#f4d03f", fontWeight: 700 }}>
-                  Rp299.000
-                </span>
-              </div>
-            ))}
+                Credit saat ini:{" "}
+                {new Intl.NumberFormat("id-ID").format(credits)}
+              </span>
+            )}
           </div>
-          <button className="btn ghost" type="button" style={{ marginTop: 8 }}>
-            Lihat Invoice Lengkap
-          </button>
+          {plan === "veo_sora_unlimited" && (
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <a
+                href="https://lynk.id/fokusai17/j4qmne076wok"
+                className="btn primary"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Tambah Credit
+              </a>
+            </div>
+          )}
         </div>
       </div>
       {showLogoutModal && (

@@ -33,6 +33,7 @@ export default function Sora2Page() {
   const [shot, setShot] = useState("");
   const [details, setDetails] = useState("");
   const [orientation, setOrientation] = useState("landscape");
+  const [model, setModel] = useState("sora-2");
   const [duration, setDuration] = useState(10);
   const [showJson, setShowJson] = useState(false);
   const [status, setStatus] = useState("");
@@ -60,12 +61,27 @@ export default function Sora2Page() {
   const [defaultOrientation, setDefaultOrientation] = useState("landscape");
   const [defaultDuration, setDefaultDuration] = useState(10);
   const [defaultStyle, setDefaultStyle] = useState("");
-  const [soraBearer, setSoraBearer] = useState("");
-  const [showBearer, setShowBearer] = useState(false);
+
   const [showUserMenu, setShowUserMenu] = useState(false);
   const userMenuRef = useRef(null);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [plan, setPlan] = useState("free");
+  const [credits, setCredits] = useState(0);
+  const [creditScope, setCreditScope] = useState("none");
+
+  // Durasi yang valid per model (sesuai docs Sora)
+  const allowedDurations = useMemo(() => {
+    if (model === "sora-2-pro") return [15]; // sesuai permintaan: hanya 15s
+    if (model === "sora-2-pro-hd") return [15];
+    return [10, 15]; // default sora-2
+  }, [model]);
+
+  // Pastikan durasi selalu valid ketika model berubah
+  useEffect(() => {
+    if (!allowedDurations.includes(duration)) {
+      setDuration(allowedDurations[0]);
+    }
+  }, [allowedDurations, duration]);
   const bumpStat = (key) => {
     try {
       const v = parseInt(localStorage.getItem(key) || "0", 10) || 0;
@@ -86,6 +102,40 @@ export default function Sora2Page() {
       setPlan(p || "free");
     } catch (_) {}
   }, []);
+  const refreshCredits = async () => {
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const token = String(session?.access_token || "");
+      if (!token) return;
+      // Try admin credits first (if admin, returns value; else 403)
+      const rAdmin = await fetch("/api/admin/credits", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (rAdmin.ok) {
+        const dA = await rAdmin.json();
+        setCreditScope("admin");
+        setCredits(Number(dA?.credits?.sora2 || 0));
+        return;
+      }
+      // Fallback to scoped credits
+      const rMe = await fetch("/api/me/credits", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const dM = await rMe.json();
+      if (rMe.ok) {
+        setCreditScope(String(dM?.scope || "none"));
+        setCredits(Number(dM?.credits || 0));
+      }
+    } catch (_) {}
+  };
+  useEffect(() => {
+    refreshCredits();
+  }, []);
+  useEffect(() => {
+    refreshCredits();
+  }, [plan]);
   // Realtime sinkron plan dari PlanSync
   useEffect(() => {
     const handler = (e) => {
@@ -123,6 +173,7 @@ export default function Sora2Page() {
     if (showLogoutModal) document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [showLogoutModal]);
+
   const displayStatus = useMemo(() => {
     const s = Number(result?.status || 0);
     const pct =
@@ -155,9 +206,9 @@ export default function Sora2Page() {
       orientation,
       resolution: "720p",
       durationSeconds: duration,
-      model: "SORA_2",
+      model: model,
     }),
-    [finalPrompt, orientation, duration]
+    [finalPrompt, orientation, duration, model]
   );
 
   const advancedJson = useMemo(() => {
@@ -236,6 +287,34 @@ export default function Sora2Page() {
       setStatus("Isi prompt terlebih dahulu.");
       return;
     }
+    const costCredits = model === "sora-2" ? 1 : 120;
+    const sscope = String(creditScope || "none");
+    if (!(sscope === "admin" || sscope === "user")) {
+      setStatus("Plan tidak eligible untuk Sora 2.");
+      return;
+    }
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const token = String(session?.access_token || "");
+      if (token) {
+        const r = await fetch("/api/me/credits", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const d = await r.json();
+        if (r.ok) {
+          const cur = Number(d?.credits || 0);
+          const scope = String(d?.scope || "none");
+          setCredits(cur);
+          setCreditScope(scope);
+          if ((scope === "admin" || scope === "user") && cur < costCredits) {
+            setStatus("Credit tidak mencukupi.");
+            return;
+          }
+        }
+      }
+    } catch (_) {}
     try {
       setStatus("Mengirim ke Sora...");
       startTimer();
@@ -248,9 +327,32 @@ export default function Sora2Page() {
       setIsPolling(false);
       pollSessionRef.current += 1;
       const session = pollSessionRef.current;
+      const formData = new FormData();
+      formData.append("prompt", finalPrompt);
+      formData.append("model", model);
+      formData.append(
+        "aspect_ratio",
+        orientation === "portrait" ? "portrait" : "landscape"
+      );
+      formData.append("resolution", "small");
+      formData.append("duration", duration);
+      formData.append("provider", "openai");
+      if (imageData) formData.append("image_data", imageData);
+      if (imageName) formData.append("image_name", imageName);
+      if (imageMime) formData.append("image_mime", imageMime);
+
+      const token =
+        typeof window !== "undefined"
+          ? localStorage.getItem("licenseActivationToken") || ""
+          : "";
+
+      // Send as JSON (backend converts to FormData for upstream)
+      // We keep sending JSON to our backend for simplicity, or we can switch to FormData if backend expects it.
+      // Looking at backend: it parses req.body for JSON.
+      // So we stick to JSON.
       const fields = {
         prompt: finalPrompt,
-        model: "sora-2",
+        model: model,
         aspect_ratio: orientation === "portrait" ? "portrait" : "landscape",
         resolution: "small",
         duration: duration,
@@ -259,10 +361,7 @@ export default function Sora2Page() {
         image_name: imageName || undefined,
         image_mime: imageMime || undefined,
       };
-      const token =
-        typeof window !== "undefined"
-          ? localStorage.getItem("licenseActivationToken") || ""
-          : "";
+
       const resp = await fetch("/api/sora/execute", {
         method: "POST",
         headers: {
@@ -345,6 +444,27 @@ export default function Sora2Page() {
       setStatus("Berhasil.");
       try {
         bumpStat("stat.sora.video.success");
+      } catch (_) {}
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        const token = String(session?.access_token || "");
+        if (token) {
+          const resp = await fetch("/api/credits/deduct", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ amount: model === "sora-2" ? 1 : 120 }),
+          });
+          const dd = await resp.json();
+          if (resp.ok) {
+            setCredits(Number(dd?.credits || 0));
+            refreshCredits();
+          }
+        }
       } catch (_) {}
     } catch (e) {
       const msg = String(e?.message || e || "").trim();
@@ -466,6 +586,32 @@ export default function Sora2Page() {
           style={{ display: "flex", gap: 12, alignItems: "center" }}
           ref={userMenuRef}
         >
+          <button
+            className="sora-v2-btn secondary"
+            title="Credits"
+            onClick={(e) => e.preventDefault()}
+          >
+            💳
+            <span
+              style={{
+                marginLeft: 6,
+                padding: "2px 6px",
+                borderRadius: 10,
+                background: "rgba(255,255,255,0.08)",
+                border: "1px solid rgba(255,255,255,0.12)",
+                fontSize: 12,
+                color: "#f8fafc",
+              }}
+            >
+              {(() => {
+                const s = String(creditScope || "none");
+                if (s === "admin" || s === "user") {
+                  return new Intl.NumberFormat("id-ID").format(credits);
+                }
+                return "tidak tersedia";
+              })()}
+            </span>
+          </button>
           <a
             className="sora-v2-btn secondary"
             href="/prompt-tunggal"
@@ -752,36 +898,6 @@ export default function Sora2Page() {
               </div>
 
               <div
-                style={{
-                  display: "flex",
-                  justifyContent: "flex-end",
-                  marginBottom: 16,
-                }}
-              >
-                <button
-                  className="sora-v2-btn secondary"
-                  style={{ fontSize: 12, padding: "6px 12px" }}
-                  onClick={() => setShowJson((v) => !v)}
-                >
-                  {showJson ? "Hide JSON" : "Show JSON"}
-                </button>
-              </div>
-              {showJson ? (
-                <pre
-                  style={{
-                    marginBottom: 16,
-                    background: "rgba(0,0,0,0.3)",
-                    padding: 12,
-                    borderRadius: 8,
-                    fontSize: 12,
-                    color: "#94a3b8",
-                  }}
-                >
-                  {JSON.stringify(advancedJson, null, 2)}
-                </pre>
-              ) : null}
-
-              <div
                 className="sora-v2-grid"
                 style={{ gridTemplateColumns: "1fr", gap: 16 }}
               >
@@ -837,6 +953,31 @@ export default function Sora2Page() {
             </>
           )}
 
+          <div className="sora-v2-input-group" style={{ marginTop: 8 }}>
+            <label className="sora-v2-label">Model</label>
+            <div
+              className="sora-v2-options-grid"
+              style={{ gridTemplateColumns: "1fr 1fr" }}
+            >
+              <div
+                className={`sora-v2-option-btn ${
+                  model === "sora-2" ? "active" : ""
+                }`}
+                onClick={() => setModel("sora-2")}
+              >
+                Sora 2
+              </div>
+              <div
+                className={`sora-v2-option-btn ${
+                  model === "sora-2-pro" ? "active" : ""
+                }`}
+                onClick={() => setModel("sora-2-pro")}
+              >
+                Sora 2 Pro
+              </div>
+            </div>
+          </div>
+
           <div
             className="sora-v2-grid"
             style={{ gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 8 }}
@@ -869,24 +1010,22 @@ export default function Sora2Page() {
               <label className="sora-v2-label">Duration</label>
               <div
                 className="sora-v2-options-grid"
-                style={{ gridTemplateColumns: "1fr 1fr" }}
+                style={{
+                  gridTemplateColumns:
+                    allowedDurations.length === 1 ? "1fr" : "1fr 1fr",
+                }}
               >
-                <div
-                  className={`sora-v2-option-btn ${
-                    duration === 10 ? "active" : ""
-                  }`}
-                  onClick={() => setDuration(10)}
-                >
-                  10s
-                </div>
-                <div
-                  className={`sora-v2-option-btn ${
-                    duration === 15 ? "active" : ""
-                  }`}
-                  onClick={() => setDuration(15)}
-                >
-                  15s
-                </div>
+                {allowedDurations.map((d) => (
+                  <div
+                    key={d}
+                    className={`sora-v2-option-btn ${
+                      duration === d ? "active" : ""
+                    }`}
+                    onClick={() => setDuration(d)}
+                  >
+                    {d}s
+                  </div>
+                ))}
               </div>
             </div>
           </div>
@@ -903,7 +1042,7 @@ export default function Sora2Page() {
                   Generating...
                 </>
               ) : (
-                "Generate Video"
+                `Generate Video  ⚡ ${model === "sora-2" ? 1 : 120} credits`
               )}
             </button>
             <div
@@ -1025,26 +1164,6 @@ export default function Sora2Page() {
               ))}
           </div>
 
-          {result && (
-            <div style={{ marginTop: 24 }}>
-              <div className="sora-v2-label" style={{ marginBottom: 8 }}>
-                Debug Info
-              </div>
-              <pre
-                style={{
-                  background: "rgba(0,0,0,0.3)",
-                  padding: 12,
-                  borderRadius: 12,
-                  fontSize: 11,
-                  color: "#64748b",
-                  overflowX: "auto",
-                }}
-              >
-                {JSON.stringify(result, null, 2)}
-              </pre>
-            </div>
-          )}
-
           <div style={{ marginTop: 16 }}>
             <button
               className="sora-v2-btn secondary"
@@ -1086,45 +1205,6 @@ export default function Sora2Page() {
               >
                 Close
               </button>
-            </div>
-
-            <div className="sora-v2-input-group">
-              <label className="sora-v2-label">Sora Bearer Token</label>
-              <div style={{ display: "flex", gap: 8 }}>
-                <input
-                  className="sora-v2-input"
-                  type={showBearer ? "text" : "password"}
-                  value={soraBearer}
-                  onChange={(e) => setSoraBearer(e.target.value)}
-                  placeholder="Paste token..."
-                />
-                <button
-                  className="sora-v2-btn secondary"
-                  onClick={() => setShowBearer(!showBearer)}
-                >
-                  {showBearer ? "Hide" : "Show"}
-                </button>
-              </div>
-              <div style={{ marginTop: 8 }}>
-                <button
-                  className="sora-v2-btn"
-                  onClick={async () => {
-                    try {
-                      const resp = await fetch("/api/sora/settings", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ soraBearer }),
-                      });
-                      if (!resp.ok) throw new Error("Failed");
-                      alert("Saved!");
-                    } catch (e) {
-                      alert("Error saving");
-                    }
-                  }}
-                >
-                  Save Token
-                </button>
-              </div>
             </div>
 
             <div

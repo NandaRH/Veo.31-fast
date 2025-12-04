@@ -66,21 +66,6 @@ export default function AdminLoginPage() {
           plan = String(d?.plan || "").toLowerCase();
         }
       } catch (_) {}
-      if (!plan) {
-        try {
-          const {
-            data: { user },
-          } = await supabase.auth.getUser();
-          if (user?.id) {
-            const { data: profile } = await supabase
-              .from("users")
-              .select("plan")
-              .eq("id", user.id)
-              .single();
-            plan = String(profile?.plan || "").toLowerCase();
-          }
-        } catch (_) {}
-      }
       if (plan !== "admin") {
         setStatus("Akun bukan admin.");
         try {
