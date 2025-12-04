@@ -46,9 +46,15 @@ try {
 // Metadata store for uploads (e.g., persisted Media ID per file)
 const uploadsMetaPath = path.join(uploadsDir, "uploads-meta.json");
 const usageStatsPath = path.join(uploadsDir, "usage-stats.json");
+<<<<<<< HEAD
 const sessionsPath = path.join(uploadsDir, "sessions.json");
 const creditsPath = path.join(uploadsDir, "credits.json");
 const userCreditsPath = path.join(uploadsDir, "user-credits.json");
+=======
+const sessionsPath = path.join(uploadsDir, "sessions.json");
+const creditsPath = path.join(uploadsDir, "credits.json");
+const userCreditsPath = path.join(uploadsDir, "user-credits.json");
+>>>>>>> 39be276ce9a47167111215a7f971b7614e8d2402
 const readUploadsMeta = () => {
   try {
     if (!fs.existsSync(uploadsMetaPath)) return {};
@@ -58,6 +64,7 @@ const readUploadsMeta = () => {
   } catch (_) {
     return {};
   }
+<<<<<<< HEAD
 };
 const writeUploadsMeta = (meta) => {
   try {
@@ -71,6 +78,19 @@ const writeUploadsMeta = (meta) => {
 const readCredits = () => {
   try {
     if (!fs.existsSync(creditsPath)) return { sora2: 0 };
+=======
+};
+const writeUploadsMeta = (meta) => {
+  try {
+    const content = JSON.stringify(meta || {}, null, 2);
+    fs.writeFileSync(uploadsMetaPath, content, "utf8");
+  } catch (_) {}
+};
+
+const readCredits = () => {
+  try {
+    if (!fs.existsSync(creditsPath)) return { sora2: 0 };
+>>>>>>> 39be276ce9a47167111215a7f971b7614e8d2402
     const raw = fs.readFileSync(creditsPath, "utf8");
     const json = JSON.parse(raw);
     const v = json && typeof json === "object" ? json : {};
@@ -78,6 +98,7 @@ const readCredits = () => {
     return { sora2: Number.isFinite(n) ? n : 0 };
   } catch (_) {
     return { sora2: 0 };
+<<<<<<< HEAD
   }
 };
 const writeCredits = (credits) => {
@@ -93,6 +114,21 @@ const writeCredits = (credits) => {
 const readUserCredits = () => {
   try {
     if (!fs.existsSync(userCreditsPath)) return {};
+=======
+  }
+};
+const writeCredits = (credits) => {
+  try {
+    const payload = { sora2: Number(credits?.sora2 || 0) || 0 };
+    const content = JSON.stringify(payload, null, 2);
+    fs.writeFileSync(creditsPath, content, "utf8");
+  } catch (_) {}
+};
+
+const readUserCredits = () => {
+  try {
+    if (!fs.existsSync(userCreditsPath)) return {};
+>>>>>>> 39be276ce9a47167111215a7f971b7614e8d2402
     const raw = fs.readFileSync(userCreditsPath, "utf8");
     const json = JSON.parse(raw);
     return json && typeof json === "object" ? json : {};
@@ -199,6 +235,7 @@ app.post("/api/session/establish", async (req, res) => {
     const { data: userData, error } = await srSupabase.auth.getUser(token);
     if (error)
       return res.status(401).json({ error: String(error.message || error) });
+<<<<<<< HEAD
     const uid = String(userData?.user?.id || "").trim();
     const email = String(userData?.user?.email || "").toLowerCase();
     if (!uid) return res.status(401).json({ error: "Invalid user" });
@@ -209,6 +246,25 @@ app.post("/api/session/establish", async (req, res) => {
       cookies.push(
         `auth_ok=1; Path=/; HttpOnly; SameSite=Lax; Max-Age=${60 * 60 * 24 * 7}`
       );
+=======
+    const uid = String(userData?.user?.id || "").trim();
+    const email = String(userData?.user?.email || "").toLowerCase();
+    if (!uid) return res.status(401).json({ error: "Invalid user" });
+    try {
+      const cookies = [];
+      const sessions = readSessions();
+      const sessionKey = crypto.randomBytes(16).toString("hex");
+      sessions[uid] = {
+        key: sessionKey,
+        uid,
+        email,
+        updatedAt: new Date().toISOString(),
+      };
+      writeSessions(sessions);
+      cookies.push(
+        `auth_ok=1; Path=/; HttpOnly; SameSite=Lax; Max-Age=${60 * 60 * 24 * 7}`
+      );
+>>>>>>> 39be276ce9a47167111215a7f971b7614e8d2402
       cookies.push(
         `auth_uid=${encodeURIComponent(
           uid
@@ -232,6 +288,7 @@ app.post("/api/session/establish", async (req, res) => {
   }
 });
 
+<<<<<<< HEAD
 app.post("/api/session/logout", async (req, res) => {
   try {
     try {
@@ -241,6 +298,21 @@ app.post("/api/session/logout", async (req, res) => {
       if (uid) {
         await deleteSessionForUser(uid);
       }
+=======
+app.post("/api/session/logout", async (req, res) => {
+  try {
+    try {
+      const cookieHeader = String(req.headers["cookie"] || "");
+      const cookiesIn = parseCookies(cookieHeader);
+      const uid = String(cookiesIn.auth_uid || "").trim();
+      if (uid) {
+        const sessions = readSessions();
+        if (sessions && sessions[uid]) {
+          delete sessions[uid];
+          writeSessions(sessions);
+        }
+      }
+>>>>>>> 39be276ce9a47167111215a7f971b7614e8d2402
     } catch (_) {}
     const cookies = [];
     const expire = "Max-Age=0";
@@ -255,6 +327,7 @@ app.post("/api/session/logout", async (req, res) => {
   }
 });
 
+<<<<<<< HEAD
 app.get("/api/session/validate", async (req, res) => {
   try {
     res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
@@ -272,6 +345,26 @@ app.get("/api/session/validate", async (req, res) => {
     if (!current || current.key !== key) {
       return res.status(401).json({ ok: false, reason: "OTHER_LOGIN", uid });
     }
+=======
+app.get("/api/session/validate", async (req, res) => {
+  try {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    const cookieHeader = String(req.headers["cookie"] || "");
+    const cookies = parseCookies(cookieHeader);
+    const uid = String(cookies.auth_uid || "").trim();
+    const key = String(cookies.auth_session || "").trim();
+    if (!uid || !key) {
+      return res
+        .status(401)
+        .json({ ok: false, reason: "NO_SESSION", uid: uid || null });
+    }
+    const sessions = readSessions();
+    const current = sessions && sessions[uid];
+    if (!current || current.key !== key) {
+      return res.status(401).json({ ok: false, reason: "OTHER_LOGIN", uid });
+    }
+>>>>>>> 39be276ce9a47167111215a7f971b7614e8d2402
     return res.json({ ok: true, uid });
   } catch (e) {
     return res.status(500).json({ ok: false, error: String(e) });
@@ -581,6 +674,7 @@ app.post("/api/video/concat", async (req, res) => {
   }
 });
 
+<<<<<<< HEAD
 const SUPABASE_URL =
   process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
@@ -719,6 +813,17 @@ const ADMIN_EMAIL_WHITELIST = (process.env.ADMIN_EMAIL_WHITELIST || "")
   .split(",")
   .map((s) => s.trim().toLowerCase())
   .filter(Boolean);
+=======
+const SUPABASE_URL =
+  process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+let srSupabase = null;
+try {
+  if (SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
+    srSupabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+  }
+} catch (_) {}
+>>>>>>> 39be276ce9a47167111215a7f971b7614e8d2402
 
 // ==== Realtime plan helpers (shared across routes) ====
 const planSubscribers = new Map(); // userId -> Set(res)
@@ -766,7 +871,11 @@ const fetchPlanForUser = async (uid) => {
 const requireAdmin = async (req, res, next) => {
   try {
     const adminSecret = String(req.headers["x-admin-secret"] || "").trim();
+<<<<<<< HEAD
     if (ADMIN_SECRET && adminSecret === ADMIN_SECRET) {
+=======
+    if (adminSecret) {
+>>>>>>> 39be276ce9a47167111215a7f971b7614e8d2402
       return next();
     }
     const authHeader = (req.headers["authorization"] || "").toString();
@@ -785,12 +894,16 @@ const requireAdmin = async (req, res, next) => {
     } catch (_) {}
     if (!isAllowed) {
       try {
+<<<<<<< HEAD
         if (
           Array.isArray(ADMIN_EMAIL_WHITELIST) &&
           ADMIN_EMAIL_WHITELIST.length
         ) {
           isAllowed = ADMIN_EMAIL_WHITELIST.includes(email);
         }
+=======
+        isAllowed = ADMIN_EMAIL_WHITELIST.includes(email);
+>>>>>>> 39be276ce9a47167111215a7f971b7614e8d2402
       } catch (_) {}
     }
     if (!isAllowed) return res.status(403).json({ error: "Forbidden" });
@@ -807,6 +920,7 @@ const ALLOWED_PLANS = new Set([
   "admin",
 ]);
 
+<<<<<<< HEAD
 app.get("/api/admin/users", requireAdmin, async (req, res) => {
   try {
     if (!srSupabase)
@@ -819,6 +933,21 @@ app.get("/api/admin/users", requireAdmin, async (req, res) => {
       return res.status(500).json({ error: String(error.message || error) });
 
     const stats = readUsageStats();
+=======
+app.get("/api/admin/users", requireAdmin, async (req, res) => {
+  try {
+    if (!srSupabase)
+      return res.status(500).json({ error: "Supabase not configured" });
+    const { data, error } = await srSupabase
+      .from("users")
+      .select("id,email,full_name,plan,created_at,updated_at")
+      .order("created_at", { ascending: false });
+    if (error)
+      return res.status(500).json({ error: String(error.message || error) });
+
+    const stats = readUsageStats();
+    const userCredits = readUserCredits();
+>>>>>>> 39be276ce9a47167111215a7f971b7614e8d2402
 
     const users = await Promise.all(
       (data || []).map(async (u) => {
@@ -842,11 +971,19 @@ app.get("/api/admin/users", requireAdmin, async (req, res) => {
           plan_expiry: planExpiry,
           veo_count: (s.counts && s.counts.veo) || 0,
           sora2_count: (s.counts && s.counts.sora2) || 0,
+<<<<<<< HEAD
           image_count: (s.counts && s.counts.image) || 0,
           sora2_credits:
             String(u.plan || "").toLowerCase() === "veo_sora_unlimited"
               ? Number(u.sora2_credits || 0) || 0
               : null,
+=======
+          image_count: (s.counts && s.counts.image) || 0,
+          sora2_credits:
+            String(u.plan || "").toLowerCase() === "veo_sora_unlimited"
+              ? Number(userCredits[String(u.id || "")] || 0)
+              : null,
+>>>>>>> 39be276ce9a47167111215a7f971b7614e8d2402
         };
       })
     );
@@ -927,6 +1064,7 @@ app.delete("/api/admin/users/:id", requireAdmin, async (req, res) => {
   }
 });
 
+<<<<<<< HEAD
 // Kredit admin: gunakan kolom sora2_credits milik admin yang sedang login
 app.get("/api/admin/credits", requireAdmin, async (req, res) => {
   try {
@@ -952,6 +1090,30 @@ app.post("/api/admin/credits/add", requireAdmin, async (req, res) => {
     res.status(500).json({ error: String(e) });
   }
 });
+=======
+app.get("/api/admin/credits", requireAdmin, async (req, res) => {
+  try {
+    const c = readCredits();
+    res.json({ ok: true, credits: c });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+app.post("/api/admin/credits/add", requireAdmin, async (req, res) => {
+  try {
+    const amt = Number(req.body?.amount || 0);
+    if (!Number.isFinite(amt))
+      return res.status(400).json({ error: "Invalid amount" });
+    const cur = readCredits();
+    const next = { sora2: Math.max(0, (cur.sora2 || 0) + amt) };
+    writeCredits(next);
+    res.json({ ok: true, credits: next });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+>>>>>>> 39be276ce9a47167111215a7f971b7614e8d2402
 
 app.get("/api/me/plan", async (req, res) => {
   try {
@@ -993,6 +1155,7 @@ const requireAuthUser = async (req) => {
   return { uid, plan };
 };
 
+<<<<<<< HEAD
 // Return credits for current user: admin -> global, unlimited -> per-user, others -> 0
 app.get("/api/me/credits", async (req, res) => {
   try {
@@ -1013,6 +1176,25 @@ app.get("/api/me/credits", async (req, res) => {
         credits: Number.isFinite(val) ? val : 0,
         scope: "user",
       });
+=======
+// Return credits for current user: admin -> global, unlimited -> per-user, others -> 0
+app.get("/api/me/credits", async (req, res) => {
+  try {
+    const { uid, plan } = await requireAuthUser(req);
+    const p = String(plan || "").toLowerCase();
+    if (p === "admin") {
+      const c = readCredits();
+      return res.json({ ok: true, credits: c.sora2, scope: "admin" });
+    }
+    if (p === "veo_sora_unlimited") {
+      const map = readUserCredits();
+      const val = Number(map[uid] || 0);
+      return res.json({
+        ok: true,
+        credits: Number.isFinite(val) ? val : 0,
+        scope: "user",
+      });
+>>>>>>> 39be276ce9a47167111215a7f971b7614e8d2402
     }
     return res.json({ ok: true, credits: 0, scope: "none" });
   } catch (e) {
@@ -1020,6 +1202,7 @@ app.get("/api/me/credits", async (req, res) => {
   }
 });
 
+<<<<<<< HEAD
 // Deduct credits from current user/admin
 app.post("/api/credits/deduct", async (req, res) => {
   try {
@@ -1047,6 +1230,36 @@ app.post("/api/credits/deduct", async (req, res) => {
       await setUserCredits(uid, next);
       return res.json({ ok: true, credits: next, scope: "user" });
     }
+=======
+// Deduct credits from current user/admin
+app.post("/api/credits/deduct", async (req, res) => {
+  try {
+    const { uid, plan } = await requireAuthUser(req);
+    const amount = Number(req.body?.amount || 0);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return res.status(400).json({ error: "Invalid amount" });
+    }
+    const p = String(plan || "").toLowerCase();
+    if (p === "admin") {
+      const cur = readCredits();
+      if ((cur.sora2 || 0) < amount) {
+        return res.status(400).json({ error: "Insufficient admin credits" });
+      }
+      const next = { sora2: (cur.sora2 || 0) - amount };
+      writeCredits(next);
+      return res.json({ ok: true, credits: next.sora2, scope: "admin" });
+    }
+    if (p === "veo_sora_unlimited") {
+      const map = readUserCredits();
+      const prev = Number(map[uid] || 0) || 0;
+      if (prev < amount) {
+        return res.status(400).json({ error: "Insufficient user credits" });
+      }
+      map[uid] = prev - amount;
+      writeUserCredits(map);
+      return res.json({ ok: true, credits: map[uid], scope: "user" });
+    }
+>>>>>>> 39be276ce9a47167111215a7f971b7614e8d2402
     return res.status(403).json({ error: "Plan not eligible" });
   } catch (e) {
     res.status(401).json({ error: String(e) });
@@ -1054,6 +1267,7 @@ app.post("/api/credits/deduct", async (req, res) => {
 });
 
 // Grant credits from admin to a user (veo_sora_unlimited)
+<<<<<<< HEAD
 app.post(
   "/api/admin/users/:id/credits/grant",
   requireAdmin,
@@ -1085,12 +1299,43 @@ app.post(
         user_credits: nextUser,
       });
     } catch (e) {
+=======
+app.post(
+  "/api/admin/users/:id/credits/grant",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const uid = String(req.params.id || "");
+      const amount = Number(req.body?.amount || 0);
+      if (!uid) return res.status(400).json({ error: "Missing id" });
+      if (!Number.isFinite(amount) || amount <= 0) {
+        return res.status(400).json({ error: "Invalid amount" });
+      }
+      // Simplified: skip Supabase plan check to make granting fast
+      const adminCredits = readCredits();
+      const curAdmin = Number(adminCredits.sora2 || 0) || 0;
+      if (curAdmin < amount)
+        return res.status(400).json({ error: "Insufficient admin credits" });
+      const nextAdmin = { sora2: curAdmin - amount };
+      writeCredits(nextAdmin);
+      const map = readUserCredits();
+      const prevUser = Number(map[uid] || 0) || 0;
+      map[uid] = prevUser + amount;
+      writeUserCredits(map);
+      return res.json({
+        ok: true,
+        admin_credits: nextAdmin.sora2,
+        user_credits: map[uid],
+      });
+    } catch (e) {
+>>>>>>> 39be276ce9a47167111215a7f971b7614e8d2402
       res.status(500).json({ error: String(e) });
     }
   }
 );
 
 app.post(
+<<<<<<< HEAD
   "/api/admin/users/:id/credits/revoke",
   requireAdmin,
   async (req, res) => {
@@ -1120,6 +1365,34 @@ app.post(
         admin_credits: nextAdmin,
         user_credits: nextUser,
       });
+=======
+  "/api/admin/users/:id/credits/revoke",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const uid = String(req.params.id || "");
+      const amount = Number(req.body?.amount || 0);
+      if (!uid) return res.status(400).json({ error: "Missing id" });
+      if (!Number.isFinite(amount) || amount <= 0) {
+        return res.status(400).json({ error: "Invalid amount" });
+      }
+      const map = readUserCredits();
+      const prevUser = Number(map[uid] || 0) || 0;
+      if (prevUser < amount) {
+        return res.status(400).json({ error: "Insufficient user credits" });
+      }
+      map[uid] = prevUser - amount;
+      writeUserCredits(map);
+      const adminCredits = readCredits();
+      const curAdmin = Number(adminCredits.sora2 || 0) || 0;
+      const nextAdmin = { sora2: curAdmin + amount };
+      writeCredits(nextAdmin);
+      return res.json({
+        ok: true,
+        admin_credits: nextAdmin.sora2,
+        user_credits: map[uid],
+      });
+>>>>>>> 39be276ce9a47167111215a7f971b7614e8d2402
     } catch (e) {
       res.status(500).json({ error: String(e) });
     }
@@ -3020,6 +3293,7 @@ const startServer = async () => {
     });
 
     // Server-side guards for protected pages
+<<<<<<< HEAD
     const protectedPaths = [
       "/prompt-tunggal",
       "/prompt-batch",
@@ -3032,6 +3306,21 @@ const startServer = async () => {
       "/admin/users",
       "/admin/dashboard",
     ];
+=======
+    const protectedPaths = [
+      "/prompt-tunggal",
+      "/prompt-batch",
+      "/frame-ke-video",
+      "/sora2",
+      "/image-generator",
+      "/dashboard",
+      "/credit",
+      "/profile",
+      "/admin/users",
+      "/admin/dashboard",
+      "/admin/credits",
+    ];
+>>>>>>> 39be276ce9a47167111215a7f971b7614e8d2402
     for (const p of protectedPaths) {
       app.get(p, async (req, res) => {
         try {
@@ -3057,12 +3346,16 @@ const startServer = async () => {
             } catch (_) {}
             if (!isAllowed) {
               const email = String(cookies.auth_email || "").toLowerCase();
+<<<<<<< HEAD
               if (
                 Array.isArray(ADMIN_EMAIL_WHITELIST) &&
                 ADMIN_EMAIL_WHITELIST.length
               ) {
                 isAllowed = ADMIN_EMAIL_WHITELIST.includes(email);
               }
+=======
+              isAllowed = ADMIN_EMAIL_WHITELIST.includes(email);
+>>>>>>> 39be276ce9a47167111215a7f971b7614e8d2402
             }
             if (!isAllowed) {
               res.status(302).setHeader("Location", "/login").end();
