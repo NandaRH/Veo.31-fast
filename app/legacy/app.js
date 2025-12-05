@@ -3573,21 +3573,30 @@ export function initLegacyApp({ initialMode } = {}) {
     return results;
   };
 
-  // Ambil fileUrl per operasi untuk merender satu video per adegan
-  const cleanUrl = (u) =>
-    typeof u === "string" ? u.replace(/[`]/g, "").trim() : u;
-  const getOpVideoUrl = (op) => {
-    try {
-      const v = op?.operation?.metadata?.video || {};
-      if (v?.fileUrl) return cleanUrl(v.fileUrl);
-      if (v?.fifeUrl) return cleanUrl(v.fifeUrl); // sebagian respons menggunakan fifeUrl
-    } catch (_) {}
-    // Fallback: cari URL yang mengandung jalur /video/ dalam op
-    const scanned = collectUrlsFromObject(op).filter(
-      (u) => /\/video\//i.test(u) || /ai-sandbox-videofx\/video\//i.test(u)
-    );
-    return scanned[0] ? cleanUrl(scanned[0]) : undefined;
-  };
+    // Ambil fileUrl per operasi untuk merender satu video per adegan
+    const cleanUrl = (u) =>
+      typeof u === "string" ? u.replace(/[`]/g, "").trim() : u;
+    const getOpVideoUrl = (op) => {
+      try {
+        const v = op?.operation?.metadata?.video || {};
+        if (v?.fileUrl) return cleanUrl(v.fileUrl);
+        if (v?.fifeUrl) return cleanUrl(v.fifeUrl); // sebagian respons menggunakan fifeUrl
+      } catch (_) {}
+      // Fallback: cari URL yang mengandung jalur /video/ dalam op
+      const scanned = collectUrlsFromObject(op).filter(
+        (u) => /\/video\//i.test(u) || /ai-sandbox-videofx\/video\//i.test(u)
+      );
+      return scanned[0] ? cleanUrl(scanned[0]) : undefined;
+    };
+    const dataHasAtLeastOneVideo = (data) => {
+      try {
+        const ops = Array.isArray(data?.operations) ? data.operations : [];
+        for (const op of ops) {
+          if (getOpVideoUrl(op)) return true;
+        }
+      } catch (_) {}
+      return false;
+    };
 
   // Ekstrak mediaId dari URL video jika metadata tidak menyediakan langsung
   const extractMediaIdFromUrl = (u) => {
@@ -3867,23 +3876,11 @@ export function initLegacyApp({ initialMode } = {}) {
         try {
           statusEl.textContent = "Extend masuk antrian...";
         } catch (_) {}
-        if (quotaPendingIncrement > 0) {
-          const q = readQuota("single");
-          writeQuota("single", q.count + quotaPendingIncrement);
-          quotaPendingIncrement = 0;
-          updateQuotaUI();
-        }
       });
       es.addEventListener("started", () => {
         try {
           statusEl.textContent = "Extend dimulai...";
         } catch (_) {}
-        if (quotaPendingIncrement > 0) {
-          const q = readQuota("single");
-          writeQuota("single", q.count + quotaPendingIncrement);
-          quotaPendingIncrement = 0;
-          updateQuotaUI();
-        }
       });
       es.addEventListener("initial", (ev) => {
         try {
@@ -3919,9 +3916,11 @@ export function initLegacyApp({ initialMode } = {}) {
         } catch (_) {}
       });
       es.addEventListener("completed", (ev) => {
+        let data = null;
         try {
           const payload = JSON.parse(ev.data || "{}");
-          lastStatusData = payload?.data || {};
+          data = payload?.data || {};
+          lastStatusData = data;
           scheduleRenderMedia(lastStatusData);
         } catch (_) {}
         try {
@@ -3930,7 +3929,8 @@ export function initLegacyApp({ initialMode } = {}) {
         pollState.stream = null;
         pollState.currentJobId = null;
         statusEl.textContent = "Extend selesai.";
-        if (quotaPendingIncrement > 0) {
+        const hasVideo = dataHasAtLeastOneVideo(data || lastStatusData);
+        if (quotaPendingIncrement > 0 && hasVideo) {
           const q = readQuota("single");
           writeQuota("single", q.count + quotaPendingIncrement);
           quotaPendingIncrement = 0;
@@ -5286,12 +5286,6 @@ export function initLegacyApp({ initialMode } = {}) {
           if (g) g.disabled = true;
           const s = el("stopGenerate");
           if (s) s.disabled = false;
-          if (quotaPendingIncrement > 0) {
-            const q = readQuota("batch");
-            writeQuota("batch", q.count + quotaPendingIncrement);
-            quotaPendingIncrement = 0;
-            updateQuotaUI();
-          }
         });
         es.addEventListener("started", () => {
           try {
@@ -5375,13 +5369,14 @@ export function initLegacyApp({ initialMode } = {}) {
           } catch (_) {}
         });
         es.addEventListener("completed", async (ev) => {
+          let data = null;
           try {
             if (pollState.backoffTimer) clearInterval(pollState.backoffTimer);
           } catch (_) {}
           pollState.backoffTimer = null;
           try {
             const payloadEv = JSON.parse(ev.data || "{}");
-            const data = payloadEv?.data || {};
+            data = payloadEv?.data || {};
             lastStatusData = data;
             outputEl.textContent = JSON.stringify(data, null, 2);
             scheduleRenderMedia(data);
@@ -5404,7 +5399,8 @@ export function initLegacyApp({ initialMode } = {}) {
             window.__isGenerating = false;
           } catch (_) {}
           showAddSceneOverlay();
-          if (quotaPendingIncrement > 0) {
+          const hasVideo = dataHasAtLeastOneVideo(data || lastStatusData);
+          if (quotaPendingIncrement > 0 && hasVideo) {
             const q = readQuota("batch");
             writeQuota("batch", q.count + quotaPendingIncrement);
             quotaPendingIncrement = 0;
@@ -5671,13 +5667,6 @@ export function initLegacyApp({ initialMode } = {}) {
         if (g) g.disabled = true;
         const s = el("stopGenerate");
         if (s) s.disabled = false;
-        if (quotaPendingIncrement > 0) {
-          const mode = quotaKeyForMode(promptMode);
-          const q = readQuota(mode);
-          writeQuota(mode, q.count + quotaPendingIncrement);
-          quotaPendingIncrement = 0;
-          updateQuotaUI();
-        }
       });
       es.addEventListener("started", () => {
         try {
@@ -5689,13 +5678,6 @@ export function initLegacyApp({ initialMode } = {}) {
         if (g) g.disabled = true;
         const s = el("stopGenerate");
         if (s) s.disabled = false;
-        if (quotaPendingIncrement > 0) {
-          const mode = quotaKeyForMode(promptMode);
-          const q = readQuota(mode);
-          writeQuota(mode, q.count + quotaPendingIncrement);
-          quotaPendingIncrement = 0;
-          updateQuotaUI();
-        }
       });
       es.addEventListener("backoff", (ev) => {
         try {
@@ -5767,13 +5749,14 @@ export function initLegacyApp({ initialMode } = {}) {
         } catch (_) {}
       });
       es.addEventListener("completed", (ev) => {
+        let data = null;
         try {
           if (pollState.backoffTimer) clearInterval(pollState.backoffTimer);
         } catch (_) {}
         pollState.backoffTimer = null;
         try {
           const payload = JSON.parse(ev.data || "{}");
-          const data = payload?.data || {};
+          data = payload?.data || {};
           lastStatusData = data;
           outputEl.textContent = JSON.stringify(data, null, 2);
           scheduleRenderMedia(data);
@@ -5805,7 +5788,8 @@ export function initLegacyApp({ initialMode } = {}) {
           });
         } catch (_) {}
         showAddSceneOverlay();
-        if (quotaPendingIncrement > 0) {
+        const hasVideo = dataHasAtLeastOneVideo(data || lastStatusData);
+        if (quotaPendingIncrement > 0 && hasVideo) {
           const mode = quotaKeyForMode(promptMode);
           const q = readQuota(mode);
           writeQuota(mode, q.count + quotaPendingIncrement);

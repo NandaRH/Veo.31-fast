@@ -46,6 +46,8 @@ export default function Sora2Page() {
   const [imageMime, setImageMime] = useState("image/jpeg");
   const [refThumbs, setRefThumbs] = useState([]);
   const videoUrlRef = useRef("");
+  const creditsDeductedRef = useRef(false);
+  const costCreditsRef = useRef(0);
   useEffect(() => {
     videoUrlRef.current = videoUrl;
   }, [videoUrl]);
@@ -281,6 +283,32 @@ export default function Sora2Page() {
     genTimerRef.current = null;
   };
 
+  const deductCreditsOnce = async () => {
+    const amount = Number(costCreditsRef.current || 0);
+    if (!amount || creditsDeductedRef.current) return;
+    creditsDeductedRef.current = true;
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const token = String(session?.access_token || "");
+      if (!token) return;
+      const resp = await fetch("/api/credits/deduct", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ amount }),
+      });
+      const dd = await resp.json();
+      if (resp.ok) {
+        setCredits(Number(dd?.credits || 0));
+        refreshCredits();
+      }
+    } catch (_) {}
+  };
+
   const generate = async () => {
     const text = (finalPrompt || "").trim();
     if (!text) {
@@ -288,6 +316,8 @@ export default function Sora2Page() {
       return;
     }
     const costCredits = model === "sora-2" ? 1 : 120;
+    costCreditsRef.current = costCredits;
+    creditsDeductedRef.current = false;
     const sscope = String(creditScope || "none");
     if (!(sscope === "admin" || sscope === "user")) {
       setStatus("Plan tidak eligible untuk Sora 2.");
@@ -415,6 +445,7 @@ export default function Sora2Page() {
         if (vurl) {
           setVideoUrl(vurl);
           stopTimer();
+          deductCreditsOnce();
         }
         setThumbUrl(turl);
         const refs = Array.isArray(data?.reference_item)
@@ -444,27 +475,6 @@ export default function Sora2Page() {
       setStatus("Berhasil.");
       try {
         bumpStat("stat.sora.video.success");
-      } catch (_) {}
-      try {
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
-        const token = String(session?.access_token || "");
-        if (token) {
-          const resp = await fetch("/api/credits/deduct", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${token}`,
-            },
-            body: JSON.stringify({ amount: model === "sora-2" ? 1 : 120 }),
-          });
-          const dd = await resp.json();
-          if (resp.ok) {
-            setCredits(Number(dd?.credits || 0));
-            refreshCredits();
-          }
-        }
       } catch (_) {}
     } catch (e) {
       const msg = String(e?.message || e || "").trim();
@@ -522,6 +532,7 @@ export default function Sora2Page() {
           if (!videoUrlRef.current || videoUrlRef.current !== vurl)
             setVideoUrl(vurl);
           stopTimer();
+          deductCreditsOnce();
           if (turl) setThumbUrl(turl);
           const refs = Array.isArray(d?.reference_item) ? d.reference_item : [];
           const rthumbs = refs

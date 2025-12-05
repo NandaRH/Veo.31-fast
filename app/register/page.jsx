@@ -33,6 +33,58 @@ export default function RegisterPage() {
   }, []);
   // ----------------------------------
 
+  const REGISTER_LIMIT_KEY = "register.limit";
+  const todayStr = () => {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const s = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${s}`;
+  };
+  const checkRegisterLimit = () => {
+    try {
+      const MIN_INTERVAL_MS = 60 * 1000; // minimal jeda 1 menit
+      const MAX_PER_DAY = 5; // maksimal 5 percobaan per hari per browser
+      const now = Date.now();
+      let raw = "";
+      try {
+        raw = localStorage.getItem(REGISTER_LIMIT_KEY) || "";
+      } catch (_) {}
+      let obj = {};
+      try {
+        obj = raw ? JSON.parse(raw) : {};
+      } catch (_) {
+        obj = {};
+      }
+      const today = todayStr();
+      if (!obj || obj.date !== today) {
+        obj = { date: today, count: 0, lastTs: 0 };
+      }
+      const lastTs = Number(obj.lastTs || 0);
+      const count = Number(obj.count || 0);
+      if (count >= MAX_PER_DAY) {
+        setStatus("Percobaan registrasi hari ini sudah mencapai batas.");
+        return false;
+      }
+      if (lastTs && now - lastTs < MIN_INTERVAL_MS) {
+        setStatus("Terlalu sering mencoba. Tunggu sebentar sebelum mencoba lagi.");
+        return false;
+      }
+      const next = {
+        date: today,
+        count: count + 1,
+        lastTs: now,
+      };
+      try {
+        localStorage.setItem(REGISTER_LIMIT_KEY, JSON.stringify(next));
+      } catch (_) {}
+      return true;
+    } catch (_) {
+      // Jika ada error, jangan blokir registrasi
+      return true;
+    }
+  };
+
   const onSubmit = async (e) => {
     e.preventDefault();
     if (!name.trim() || !email.trim() || !password.trim() || !confirm.trim()) {
@@ -41,6 +93,9 @@ export default function RegisterPage() {
     }
     if (password !== confirm) {
       setStatus("Konfirmasi password tidak cocok.");
+      return;
+    }
+    if (!checkRegisterLimit()) {
       return;
     }
     try {
