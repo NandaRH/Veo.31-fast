@@ -160,12 +160,23 @@ const parseCookies = (cookieHeader) => {
     return {};
   }
 };
+
+// Zona waktu logika reset kuota (menit offset dari UTC).
+// Default: 420 menit (UTC+7, mis. WIB). Bisa di-override via env QUOTA_TZ_OFFSET_MINUTES.
+const QUOTA_TZ_OFFSET_MINUTES = Number(
+  process.env.QUOTA_TZ_OFFSET_MINUTES || "420"
+);
+
 const quotaTodayStr = () => {
   try {
-    const d = new Date();
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, "0");
-    const s = String(d.getDate()).padStart(2, "0");
+    const now = new Date();
+    // Konversi ke UTC lalu geser ke zona kuota tetap (mis. WIB)
+    const utcMs = now.getTime() + now.getTimezoneOffset() * 60000;
+    const localMs = utcMs + QUOTA_TZ_OFFSET_MINUTES * 60000;
+    const d = new Date(localMs);
+    const y = d.getUTCFullYear();
+    const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+    const s = String(d.getUTCDate()).padStart(2, "0");
     return `${y}-${m}-${s}`;
   } catch (_) {
     try {

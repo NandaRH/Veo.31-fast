@@ -794,11 +794,20 @@ export function initLegacyApp({ initialMode } = {}) {
   };
     const quotaLimitForMode = (mode) => {
       const alloc = readQuotaAlloc();
-      return mode === "batch"
-        ? alloc.batch
-        : mode === "frame"
-        ? alloc.frame
-        : alloc.single;
+      const raw =
+        mode === "batch"
+          ? alloc.batch
+          : mode === "frame"
+          ? alloc.frame
+          : alloc.single;
+      const def =
+        mode === "batch"
+          ? DEFAULT_ALLOC.batch
+          : mode === "frame"
+          ? DEFAULT_ALLOC.frame
+          : DEFAULT_ALLOC.single;
+      const n = Number(raw);
+      return Number.isFinite(n) && n > 0 ? n : def;
     };
     const todayStr = () => {
       try {
@@ -4095,6 +4104,10 @@ export function initLegacyApp({ initialMode } = {}) {
           extendLastVideo({
             prompt: promptVal,
             overrideGenerationId: overrideVal,
+            // Veo Fast selalu menghasilkan video 8 detik (≈480 frame @60fps).
+            // Pakai 1 detik terakhir sebagai konteks extend.
+            startFrameIndex: 420,
+            endFrameIndex: 480,
           });
           close();
         } catch (e) {
