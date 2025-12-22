@@ -27,31 +27,41 @@ echo "✅ VNC server started on port 5900"
 # 5. Start noVNC (web-based VNC viewer)
 echo "🌐 Starting noVNC web viewer on port 6080..."
 
-# Find noVNC launch script (path varies by distro)
-NOVNC_LAUNCH=""
-for path in /usr/share/novnc/utils/launch.sh /usr/share/novnc/utils/novnc_proxy /usr/share/websockify/run /usr/bin/websockify; do
-    if [ -f "$path" ]; then
-        NOVNC_LAUNCH="$path"
+# Find noVNC web directory (structure varies by distro)
+NOVNC_WEB=""
+for webpath in /usr/share/novnc /usr/share/novnc/vnc.html /usr/share/novnc/public; do
+    if [ -f "$webpath/vnc.html" ] || [ -f "$webpath" ]; then
+        if [ -d "$webpath" ]; then
+            NOVNC_WEB="$webpath"
+        else
+            NOVNC_WEB="$(dirname $webpath)"
+        fi
         break
     fi
 done
 
-if [ -n "$NOVNC_LAUNCH" ]; then
-    echo "📍 Found noVNC at: $NOVNC_LAUNCH"
-    if [[ "$NOVNC_LAUNCH" == *"websockify"* ]]; then
-        # Direct websockify mode
-        websockify --web=/usr/share/novnc 6080 localhost:5900 &
-    else
-        # noVNC launch script mode
-        "$NOVNC_LAUNCH" --listen 6080 --vnc localhost:5900 &
+# If vnc.html not in expected location, search for it
+if [ -z "$NOVNC_WEB" ]; then
+    FOUND_VNC=$(find /usr/share -name "vnc.html" 2>/dev/null | head -1)
+    if [ -n "$FOUND_VNC" ]; then
+        NOVNC_WEB="$(dirname $FOUND_VNC)"
     fi
+fi
+
+echo "📍 noVNC web directory: ${NOVNC_WEB:-not found}"
+echo "📂 Contents: "
+ls -la "${NOVNC_WEB:-/usr/share/novnc}" 2>/dev/null | head -10
+
+# Start websockify with the correct web path
+if [ -n "$NOVNC_WEB" ]; then
+    echo "🚀 Starting websockify with web dir: $NOVNC_WEB"
+    websockify --web="$NOVNC_WEB" 6080 localhost:5900 &
     sleep 2
     echo "✅ noVNC started on port 6080"
 else
-    echo "⚠️ noVNC not found! Trying websockify directly..."
-    # Fallback: try websockify directly
-    which websockify && websockify --web=/usr/share/novnc 6080 localhost:5900 &
-    sleep 1
+    echo "⚠️ noVNC web files not found! VNC access via browser will not work."
+    echo "📝 Available in /usr/share:"
+    ls /usr/share | grep -i vnc || echo "No VNC directories found"
 fi
 
 # 6. Auto-download browser session from Google Drive (if SESSION_URL is set and folder empty)
