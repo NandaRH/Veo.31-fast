@@ -3373,8 +3373,12 @@ const startServer = async () => {
                   break;
                 }
               } else {
-                if (p.status === 429) {
-                  // Poll backoff and continue
+                // Handle errors
+                const isRetryable = p.status === 429 || p.status >= 500;
+
+                if (isRetryable) {
+                  // Retry logic for 429 AND Server Errors (5xx)
+                  // respect max retry if >0, else unlimited
                   if (RETRY_MAX_429 > 0 && job.attempts >= RETRY_MAX_429) {
                     job.status = "failed";
                     job.error = p.data?.error || p.data || `HTTP ${p.status}`;
@@ -3390,7 +3394,10 @@ const startServer = async () => {
                     pushEvent(jobId, "cancelled", { attempt });
                     break;
                   }
+
+                  // Use backoff
                   await awaitBackoff(p.status, p.retryAfterSec);
+
                   if (job.cancelRequested) {
                     job.status = "cancelled";
                     pushEvent(jobId, "cancelled", { attempt });
@@ -3398,6 +3405,7 @@ const startServer = async () => {
                   }
                   // continue polling after backoff
                 } else {
+                  // Permanent error (e.g. 400, 401, 403)
                   job.status = "failed";
                   job.error = p.data?.error || p.data || `HTTP ${p.status}`;
                   pushEvent(jobId, "failed", {
