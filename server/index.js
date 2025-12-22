@@ -3582,6 +3582,17 @@ const startServer = async () => {
     });
 
     app.all("*", (req, res) => handleNext(req, res));
+
+    // Debug Endpoint (Public)
+    app.get("/api/debug-browser", async (req, res) => {
+      try {
+        const status = await playwrightVeo.getBrowserStatus();
+        res.json(status);
+      } catch (err) {
+        res.status(500).json({ error: String(err) });
+      }
+    });
+
     app.listen(PORT, async () => {
       console.log(
         `Labs Flow proxy server (Next.js + API) running at http://localhost:${PORT}`
