@@ -26,9 +26,33 @@ echo "✅ VNC server started on port 5900"
 
 # 5. Start noVNC (web-based VNC viewer)
 echo "🌐 Starting noVNC web viewer on port 6080..."
-/usr/share/novnc/utils/launch.sh --listen 6080 --vnc localhost:5900 &
-sleep 1
-echo "✅ noVNC started on port 6080"
+
+# Find noVNC launch script (path varies by distro)
+NOVNC_LAUNCH=""
+for path in /usr/share/novnc/utils/launch.sh /usr/share/novnc/utils/novnc_proxy /usr/share/websockify/run /usr/bin/websockify; do
+    if [ -f "$path" ]; then
+        NOVNC_LAUNCH="$path"
+        break
+    fi
+done
+
+if [ -n "$NOVNC_LAUNCH" ]; then
+    echo "📍 Found noVNC at: $NOVNC_LAUNCH"
+    if [[ "$NOVNC_LAUNCH" == *"websockify"* ]]; then
+        # Direct websockify mode
+        websockify --web=/usr/share/novnc 6080 localhost:5900 &
+    else
+        # noVNC launch script mode
+        "$NOVNC_LAUNCH" --listen 6080 --vnc localhost:5900 &
+    fi
+    sleep 2
+    echo "✅ noVNC started on port 6080"
+else
+    echo "⚠️ noVNC not found! Trying websockify directly..."
+    # Fallback: try websockify directly
+    which websockify && websockify --web=/usr/share/novnc 6080 localhost:5900 &
+    sleep 1
+fi
 
 # 6. Auto-download browser session from Google Drive (if SESSION_URL is set and folder empty)
 if [ -n "$SESSION_URL" ]; then

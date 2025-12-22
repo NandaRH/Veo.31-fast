@@ -33,6 +33,7 @@ RUN apt-get update && apt-get install -y \
     libxcb1 \
     x11vnc \
     novnc \
+    python3-websockify \
     unzip \
     --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
