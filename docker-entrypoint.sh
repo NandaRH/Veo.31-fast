@@ -78,7 +78,13 @@ if [ -n "$SESSION_URL" ]; then
             echo "📦 Extracting session..."
             unzip -o session.zip
             rm -f session.zip
-            echo "✅ Session extracted successfully!"
+            
+            # Hapus file lock yang ikut terupload dari local
+            echo "🧹 Removing lock files..."
+            rm -f SingletonLock SingletonCookie SingletonSocket
+            rm -f Default/SingletonLock Default/SingletonCookie Default/SingletonSocket
+            
+            echo "✅ Session extracted & cleaned successfully!"
             ls -la
         else
             echo "⚠️ Failed to download session. Will start fresh."
