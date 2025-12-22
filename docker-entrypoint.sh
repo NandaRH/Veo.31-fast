@@ -64,6 +64,14 @@ else
     ls /usr/share | grep -i vnc || echo "No VNC directories found"
 fi
 
+# 6a. FORCE RESET SESSION (If Requested via ENV)
+if [ "$FORCE_RESET" = "true" ]; then
+    echo "⚠️ FORCE_RESET detected! Wiping browser data..."
+    rm -rf /app/browser-data/*
+    rm -rf /app/browser-data-firefox/*
+    echo "✅ Browser data wiped."
+fi
+
 # 6. Auto-download browser session from Google Drive (if SESSION_URL is set and folder empty)
 if [ -n "$SESSION_URL" ]; then
     cd /app/browser-data
