@@ -550,6 +550,7 @@ export const triggerRecaptchaCapture = async (prompt = "test video generation") 
  * Execute API request dari dalam browser context
  * Ini memastikan token reCAPTCHA dan request dalam context yang sama
  */
+// Execute API request from browser context
 export const executeApiRequest = async ({ url, method = "POST", headers = {}, payload }) => {
   if (!activePage) {
     return { success: false, error: "Browser belum dibuka", status: 500 };
@@ -558,29 +559,44 @@ export const executeApiRequest = async ({ url, method = "POST", headers = {}, pa
   try {
     console.log("[Playwright] Executing API request from browser context...");
 
-    // SELALU reload halaman Labs untuk fresh grecaptcha context
-    console.log("[Playwright] Reloading Labs page for fresh context...");
-    await activePage.goto(GOOGLE_LABS_URL, {
-      waitUntil: "networkidle",
-      timeout: 30000,
-    });
+    // Cek apakah sudah di Labs
+    const currentUrl = activePage.url();
+    const isAtLabs = currentUrl.includes(GOOGLE_LABS_URL) || currentUrl.includes("labs.google");
 
-    // Tunggu grecaptcha fully loaded
-    await activePage.waitForTimeout(3000);
+    if (!isAtLabs) {
+      console.log("[Playwright] Navigating to Labs...");
+      await activePage.goto(GOOGLE_LABS_URL, {
+        waitUntil: "domcontentloaded",
+        timeout: 30000,
+      });
+    } else {
+      console.log("[Playwright] Already at Labs, skipping full reload...");
+    }
 
-    // Verify grecaptcha tersedia
-    const hasGrecaptcha = await activePage.evaluate(() => {
+    // Tunggu sebentar untuk pastikan script ready
+    await activePage.waitForTimeout(2000);
+
+    // Verify grecaptcha tersedia (Retry logik)
+    let hasGrecaptcha = await activePage.evaluate(() => {
       return typeof grecaptcha !== 'undefined' && typeof grecaptcha.enterprise !== 'undefined';
     });
 
     if (!hasGrecaptcha) {
-      console.log("[Playwright] ⚠️ grecaptcha not available! Browser mungkin perlu login ulang.");
-      return { success: false, error: "grecaptcha tidak tersedia. Coba restart-visible untuk login ulang.", status: 403 };
+      console.log("[Playwright] grecaptcha not found, trying reload...");
+      await activePage.reload({ waitUntil: "networkidle" });
+      await activePage.waitForTimeout(3000);
+      hasGrecaptcha = await activePage.evaluate(() => {
+        return typeof grecaptcha !== 'undefined' && typeof grecaptcha.enterprise !== 'undefined';
+      });
+    }
+
+    if (!hasGrecaptcha) {
+      console.log("[Playwright] ⚠️ grecaptcha still not available!");
+      return { success: false, error: "grecaptcha failed to load. Check VNC.", status: 500 };
     }
 
     console.log("[Playwright] ✓ grecaptcha available, executing request...");
 
-    // Execute reCAPTCHA dan API request dari dalam browser
     const result = await activePage.evaluate(async ({ url, method, headers, payload }) => {
       try {
         // Step 1: Get fresh reCAPTCHA token
