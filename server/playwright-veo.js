@@ -3,10 +3,15 @@
  * Fitur utama: Capture reCAPTCHA token untuk digunakan di API
  */
 
-import { chromium, firefox } from "playwright";
+import { chromium, firefox } from "playwright-extra";
+import stealthPlugin from "puppeteer-extra-plugin-stealth";
 import path from "node:path";
 import fs from "node:fs";
 import { EventEmitter } from "node:events";
+
+// Apply stealth plugin
+chromium.use(stealthPlugin());
+firefox.use(stealthPlugin());
 
 // Path untuk menyimpan session browser (persistent login)
 const USER_DATA_DIR = path.resolve(process.cwd(), "browser-data");
@@ -173,23 +178,8 @@ export const launchBrowser = async (options = {}) => {
     const pages = browserContext.pages();
     activePage = pages.length > 0 ? pages[0] : await browserContext.newPage();
 
-    // Anti-detection scripts
-    await activePage.addInitScript(() => {
-      // Override webdriver detection
-      Object.defineProperty(navigator, "webdriver", {
-        get: () => undefined,
-      });
-      // Override plugins
-      Object.defineProperty(navigator, "plugins", {
-        get: () => [1, 2, 3, 4, 5],
-      });
-      // Override languages
-      Object.defineProperty(navigator, "languages", {
-        get: () => ["en-US", "en", "id"],
-      });
-      // Chrome runtime
-      window.chrome = { runtime: {} };
-    });
+    // Stealth plugin handles anti-detection automatically.
+    // No manual scripts needed.
 
     // Setup network interception untuk capture reCAPTCHA token
     await setupRecaptchaInterceptor();
