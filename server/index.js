@@ -1397,16 +1397,22 @@ app.post("/api/labsflow/execute", async (req, res) => {
           console.log("[labsflow/execute] Browser status:", browserStatus);
         }
       } catch (browserErr) {
-        console.log("[labsflow/execute] Browser mode failed, falling back:", browserErr.message);
+        console.error("[labsflow/execute] Browser mode CRITICAL FAILURE:", browserErr);
+        // JANGAN FALLBACK jika browser error, return error aslinya agar user tahu
+        return res.status(500).json({
+          error: "Browser Automation Failed",
+          detail: browserErr.message,
+          hint: "Please check VNC connection or restart browser via /api/browser/restart-visible"
+        });
       }
     }
 
-    // ======= FALLBACK: Direct API (for non-video endpoints or when browser unavailable) =======
     // ======= FALLBACK: Direct API (requires Bearer) =======
+    // Hanya masuk sini jika browser TIDAK ready (status check false), bukan jika browser error saat execute
     if (!bearer) {
       console.error("[labsflow/execute] Fallback failed: LABS_BEARER missing");
       return res.status(500).json({
-        error: "Bearer kadaluarsa, Minta bearer baru ke admin (LABS_BEARER is missing)",
+        error: "Bearer kadaluarsa (Browser belum siap atau belum login). Cek status di /api/debug-browser.",
       });
     }
 
