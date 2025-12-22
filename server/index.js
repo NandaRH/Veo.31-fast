@@ -1351,9 +1351,10 @@ app.post("/api/labsflow/execute", async (req, res) => {
     const isGenExtend = lowerUrl.includes(
       "/video:batchasyncgeneratevideoextendvideo"
     );
-    const isCheck = lowerUrl.includes(
-      "/video:batchcheckasyncvideogenerationstatus"
-    );
+    const isCheck =
+      lowerUrl.includes("/video:batchcheckasyncvideogenerationstatus") ||
+      lowerUrl.includes("/operations:batchcheckasyncvideogenerationstatus");
+
     const isReshoot = lowerUrl.includes(
       "/video:batchasyncgeneratevideoreshootvideo"
     );
@@ -1364,7 +1365,15 @@ app.post("/api/labsflow/execute", async (req, res) => {
 
     // ======= BROWSER MODE: Execute API from browser context =======
     // Untuk video & image generation, HARUS request dari browser agar token valid
-    const isVideoGeneration = isGenText || isGenStartImage || isGenStartEndImage || isGenRefImages || isGenExtend || isReshoot;
+    const isVideoGeneration =
+      isGenText ||
+      isGenStartImage ||
+      isGenStartEndImage ||
+      isGenRefImages ||
+      isGenExtend ||
+      isReshoot ||
+      isCheck; // <-- TAMBAHKAN INI (Polling juga butuh browser)
+
     const isImageGeneration = isFlowMediaImages;
     const requiresBrowserMode = isVideoGeneration || isImageGeneration;
 
