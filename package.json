@@ -24,7 +24,7 @@
     "ffmpeg-static": "^5.2.0",
     "fluent-ffmpeg": "^2.1.2",
     "localtunnel": "^2.0.2",
-    "next": "^14.2.5",
+    "next": "^14.2.35",
     "playwright": "^1.49.1",
     "playwright-extra": "^4.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2",
