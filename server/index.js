@@ -3581,9 +3581,9 @@ const startServer = async () => {
       res.status(404).send("Not Found");
     });
 
-    app.all("*", (req, res) => handleNext(req, res));
+    // === Browser Management Endpoints ===
 
-    // Debug Endpoint (Public)
+    // Debug Browser Status (Public for diagnostics)
     app.get("/api/debug-browser", async (req, res) => {
       try {
         const status = await playwrightVeo.getBrowserStatus();
@@ -3592,6 +3592,30 @@ const startServer = async () => {
         res.status(500).json({ error: String(err) });
       }
     });
+
+    // Manual Restart Browser (Visible Mode) - Bypass Admin Check sementara untuk setup
+    app.get("/api/browser/restart-visible", async (req, res) => {
+      try {
+        console.log("[API] Manual browser restart requested...");
+        await playwrightVeo.closeBrowser();
+        const result = await playwrightVeo.launchBrowser({ forceVisible: true });
+        if (result.success) {
+          await playwrightVeo.navigateToLabs();
+        }
+        res.json(result);
+      } catch (err) {
+        res.status(500).json({ error: String(err) });
+      }
+    });
+
+    // Check Status (Official)
+    app.get("/api/browser/status", async (req, res) => {
+      const status = await playwrightVeo.getBrowserStatus();
+      res.json(status);
+    });
+
+    // Next.js Catch-all Handler (MUST BE LAST)
+    app.all("*", (req, res) => handleNext(req, res));
 
     app.listen(PORT, async () => {
       console.log(
