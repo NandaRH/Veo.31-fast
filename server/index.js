@@ -8,6 +8,7 @@ import next from "next";
 import ffmpeg from "fluent-ffmpeg";
 import ffmpegPath from "ffmpeg-static";
 import { createClient } from "@supabase/supabase-js";
+import { createProxyMiddleware } from "http-proxy-middleware";
 
 // Playwright Browser Automation untuk bypass reCAPTCHA
 import playwrightVeo from "./playwright-veo.js";
@@ -38,13 +39,54 @@ app.use(express.json({ limit: "25mb" }));
 const uploadsDir = path.resolve(process.cwd(), "uploads");
 try {
   fs.mkdirSync(uploadsDir, { recursive: true });
-} catch (_) {}
+} catch (_) { }
 app.use("/uploads", express.static(uploadsDir));
+
+// === noVNC Proxy untuk akses virtual display via browser ===
+// Akses: https://fokusai.fun/vnc?secret=YOUR_VNC_SECRET
+// Ini memungkinkan login Google langsung di Railway tanpa upload session
+const VNC_SECRET = process.env.VNC_SECRET || "";
+const NOVNC_PORT = 6080;
+
+// Simple auth check for VNC access
+app.use("/vnc", (req, res, next) => {
+  // Check secret from query param or header
+  const secret = req.query.secret || req.headers["x-vnc-secret"] || "";
+
+  // If VNC_SECRET is set, require it
+  if (VNC_SECRET && secret !== VNC_SECRET) {
+    return res.status(403).json({
+      error: "VNC access requires secret",
+      hint: "Add ?secret=YOUR_VNC_SECRET to URL"
+    });
+  }
+  next();
+});
+
+// Proxy to noVNC
+app.use("/vnc", createProxyMiddleware({
+  target: `http://localhost:${NOVNC_PORT}`,
+  changeOrigin: true,
+  ws: true, // Enable WebSocket proxy
+  pathRewrite: {
+    "^/vnc": "" // Remove /vnc prefix when forwarding
+  },
+  onError: (err, req, res) => {
+    console.error("[VNC Proxy] Error:", err.message);
+    if (res.writeHead) {
+      res.writeHead(503, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({
+        error: "VNC not available",
+        detail: "noVNC service may not be running. Check if running in Railway with Xvfb."
+      }));
+    }
+  }
+}));
 
 // Set ffmpeg binary path (ffmpeg-static)
 try {
   if (ffmpegPath) ffmpeg.setFfmpegPath(ffmpegPath);
-} catch (_) {}
+} catch (_) { }
 
 // Metadata store for uploads (e.g., persisted Media ID per file)
 const uploadsMetaPath = path.join(uploadsDir, "uploads-meta.json");
@@ -67,7 +109,7 @@ const writeUploadsMeta = (meta) => {
   try {
     const content = JSON.stringify(meta || {}, null, 2);
     fs.writeFileSync(uploadsMetaPath, content, "utf8");
-  } catch (_) {}
+  } catch (_) { }
 };
 
 // Lokal fallback storage untuk kredit admin (file JSON).
@@ -89,7 +131,7 @@ const writeCredits = (credits) => {
     const payload = { sora2: Number(credits?.sora2 || 0) || 0 };
     const content = JSON.stringify(payload, null, 2);
     fs.writeFileSync(creditsPath, content, "utf8");
-  } catch (_) {}
+  } catch (_) { }
 };
 
 // Lokal fallback storage untuk kredit per-user (file JSON).
@@ -108,7 +150,7 @@ const writeUserCredits = (map) => {
   try {
     const content = JSON.stringify(map || {}, null, 2);
     fs.writeFileSync(userCreditsPath, content, "utf8");
-  } catch (_) {}
+  } catch (_) { }
 };
 
 const readUsageStats = () => {
@@ -125,7 +167,7 @@ const writeUsageStats = (stats) => {
   try {
     const content = JSON.stringify(stats || {}, null, 2);
     fs.writeFileSync(usageStatsPath, content, "utf8");
-  } catch (_) {}
+  } catch (_) { }
 };
 const readSessions = () => {
   try {
@@ -141,7 +183,7 @@ const writeSessions = (sessions) => {
   try {
     const content = JSON.stringify(sessions || {}, null, 2);
     fs.writeFileSync(sessionsPath, content, "utf8");
-  } catch (_) {}
+  } catch (_) { }
 };
 
 const parseCookies = (cookieHeader) => {
@@ -229,7 +271,7 @@ const bumpUsage = (user, type) => {
     cur.updatedAt = nowIso;
     stats[uid] = cur;
     writeUsageStats(stats);
-  } catch (_) {}
+  } catch (_) { }
 };
 
 // Establish server-side session via HttpOnly cookies after verifying Supabase token
@@ -269,7 +311,7 @@ app.post("/api/session/establish", async (req, res) => {
         )}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${60 * 60 * 24 * 7}`
       );
       res.setHeader("Set-Cookie", cookies);
-    } catch (_) {}
+    } catch (_) { }
     res.json({ ok: true, uid, email });
   } catch (e) {
     res.status(500).json({ error: String(e) });
@@ -285,7 +327,7 @@ app.post("/api/session/logout", async (req, res) => {
       if (uid) {
         await deleteSessionForUser(uid);
       }
-    } catch (_) {}
+    } catch (_) { }
     const cookies = [];
     const expire = "Max-Age=0";
     cookies.push(`auth_ok=; Path=/; HttpOnly; SameSite=Lax; ${expire}`);
@@ -383,7 +425,7 @@ app.delete("/api/uploads/:name", async (req, res) => {
         const { [safeName]: _omit, ...rest } = meta;
         writeUploadsMeta(rest);
       }
-    } catch (_) {}
+    } catch (_) { }
     res.json({ ok: true, name: safeName });
   } catch (err) {
     console.error("Delete upload error", err);
@@ -432,7 +474,7 @@ app.post("/api/uploads/:name/media-id", async (req, res) => {
         plan: cookies.plan || "",
       };
       bumpUsage(user, "image");
-    } catch (_) {}
+    } catch (_) { }
     res.json({ ok: true, name: safeName, mediaId });
   } catch (err) {
     console.error("Persist mediaId error", err);
@@ -506,7 +548,7 @@ const readSoraJobs = () => {
 const writeSoraJobs = (jobs) => {
   try {
     fs.writeFileSync(soraJobsPath, JSON.stringify(jobs, null, 2), "utf8");
-  } catch (_) {}
+  } catch (_) { }
 };
 
 const readActivationState = () => {
@@ -568,7 +610,7 @@ app.post("/api/video/concat", async (req, res) => {
     const tmpDir = path.join(uploadsDir, "tmp");
     try {
       fs.mkdirSync(tmpDir, { recursive: true });
-    } catch (_) {}
+    } catch (_) { }
     const tmpFiles = [];
     for (let i = 0; i < list.length; i++) {
       const url = list[i];
@@ -611,9 +653,9 @@ app.post("/api/video/concat", async (req, res) => {
       for (const f of tmpFiles) {
         try {
           await fs.promises.unlink(f);
-        } catch (_) {}
+        } catch (_) { }
       }
-    } catch (_) {}
+    } catch (_) { }
 
     const url = `/uploads/${outName}`;
     res.json({ ok: true, url, path: url });
@@ -633,7 +675,7 @@ try {
   if (SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
     srSupabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
   }
-} catch (_) {}
+} catch (_) { }
 
 // ===== Server-side session storage via Supabase (persisten) dengan fallback file JSON =====
 const SESSIONS_TABLE =
@@ -681,7 +723,7 @@ const setSessionForUser = async (uid, sessionKey, email) => {
     const sessions = readSessions();
     sessions[id] = normalized;
     writeSessions(sessions);
-  } catch (_) {}
+  } catch (_) { }
   // Persisten di Supabase bila tersedia
   if (!srSupabase) return;
   try {
@@ -691,7 +733,7 @@ const setSessionForUser = async (uid, sessionKey, email) => {
       email: normalized.email,
       updated_at: normalized.updatedAt,
     });
-  } catch (_) {}
+  } catch (_) { }
 };
 
 const deleteSessionForUser = async (uid) => {
@@ -703,11 +745,11 @@ const deleteSessionForUser = async (uid) => {
       delete sessions[id];
       writeSessions(sessions);
     }
-  } catch (_) {}
+  } catch (_) { }
   if (!srSupabase) return;
   try {
     await srSupabase.from(SESSIONS_TABLE).delete().eq("user_id", id);
-  } catch (_) {}
+  } catch (_) { }
 };
 
 // ===== Kredit admin & user via kolom di tabel users (Supabase) =====
@@ -743,7 +785,7 @@ const setUserCredits = async (uid, value) => {
       .from("users")
       .update({ sora2_credits: n })
       .eq("id", id);
-  } catch (_) {}
+  } catch (_) { }
 };
 
 // Sinkronkan kredit semua akun dengan plan 'admin' ke nilai yang sama
@@ -755,7 +797,7 @@ const syncAdminCredits = async (value) => {
       .from("users")
       .update({ sora2_credits: n })
       .eq("plan", "admin");
-  } catch (_) {}
+  } catch (_) { }
 };
 
 const ADMIN_SECRET = (process.env.ADMIN_SECRET || "").trim();
@@ -775,7 +817,7 @@ const pushPlanEvent = (userId, event, data = {}) => {
   for (const res of set) {
     try {
       res.write(line);
-    } catch (_) {}
+    } catch (_) { }
   }
 };
 
@@ -791,7 +833,7 @@ const fetchPlanForUser = async (uid) => {
     if (!error && data) {
       result.plan = String(data.plan || "free").toLowerCase();
     }
-  } catch (_) {}
+  } catch (_) { }
   try {
     const { data: adminUser } = await srSupabase.auth.admin.getUserById(uid);
     const meta = adminUser?.user?.user_metadata || {};
@@ -802,7 +844,7 @@ const fetchPlanForUser = async (uid) => {
       const n = Number(pe);
       if (Number.isFinite(n)) result.expiry = n;
     }
-  } catch (_) {}
+  } catch (_) { }
   return result;
 };
 
@@ -826,7 +868,7 @@ const requireAdmin = async (req, res, next) => {
     try {
       const { plan } = await fetchPlanForUser(uid);
       isAllowed = String(plan || "").toLowerCase() === "admin";
-    } catch (_) {}
+    } catch (_) { }
     if (!isAllowed) {
       try {
         if (
@@ -835,13 +877,13 @@ const requireAdmin = async (req, res, next) => {
         ) {
           isAllowed = ADMIN_EMAIL_WHITELIST.includes(email);
         }
-      } catch (_) {}
+      } catch (_) { }
     }
     if (!isAllowed) return res.status(403).json({ error: "Forbidden" });
     try {
       req.adminUserId = uid;
       req.adminEmail = email;
-    } catch (_) {}
+    } catch (_) { }
     next();
   } catch (e) {
     res.status(500).json({ error: String(e) });
@@ -884,7 +926,7 @@ app.get("/api/admin/users", requireAdmin, async (req, res) => {
             const n = Number(pe);
             if (Number.isFinite(n)) planExpiry = n;
           }
-        } catch (_) {}
+        } catch (_) { }
         return {
           ...u,
           plan_expiry: planExpiry,
@@ -931,7 +973,7 @@ app.post("/api/admin/users/:id/plan", requireAdmin, async (req, res) => {
         meta.planExpiry = null;
       }
       await srSupabase.auth.admin.updateUserById(id, { user_metadata: meta });
-    } catch (_) {}
+    } catch (_) { }
     // Jika user baru di-set sebagai admin, samakan kredit Sora dengan admin lain
     if (plan === "admin") {
       try {
@@ -950,15 +992,15 @@ app.post("/api/admin/users/:id/plan", requireAdmin, async (req, res) => {
             const n = Number(anyAdmin?.sora2_credits || 0);
             if (Number.isFinite(n)) baseCredits = n;
           }
-        } catch (_) {}
+        } catch (_) { }
         await syncAdminCredits(baseCredits);
-      } catch (_) {}
+      } catch (_) { }
     }
     // Push realtime plan update ke user terkait (jika ada subscriber)
     try {
       const { plan: curPlan, expiry } = await fetchPlanForUser(id);
       pushPlanEvent(id, "plan_update", { plan: curPlan, expiry });
-    } catch (_) {}
+    } catch (_) { }
     res.json({ ok: true, user: data });
   } catch (e) {
     res.status(500).json({ error: String(e) });
@@ -975,12 +1017,12 @@ app.delete("/api/admin/users/:id", requireAdmin, async (req, res) => {
     // Hapus dari tabel users
     try {
       await srSupabase.from("users").delete().eq("id", id);
-    } catch (_) {}
+    } catch (_) { }
 
     // Hapus akun auth Supabase (jika ada)
     try {
       await srSupabase.auth.admin.deleteUser(id);
-    } catch (_) {}
+    } catch (_) { }
 
     // Bersihkan statistik penggunaan lokal
     try {
@@ -989,7 +1031,7 @@ app.delete("/api/admin/users/:id", requireAdmin, async (req, res) => {
         const { [id]: _omit, ...rest } = stats;
         writeUsageStats(rest);
       }
-    } catch (_) {}
+    } catch (_) { }
 
     res.json({ ok: true });
   } catch (e) {
@@ -1091,7 +1133,7 @@ const requireAuthUser = async (req) => {
       if (ADMIN_EMAIL_WHITELIST && ADMIN_EMAIL_WHITELIST.includes(email)) {
         plan = "admin";
       }
-    } catch (_) {}
+    } catch (_) { }
   }
   return { uid, plan };
 };
@@ -1259,7 +1301,7 @@ app.get("/api/me/plan/stream", async (req, res) => {
       try {
         const s = planSubscribers.get(uid);
         if (s) s.delete(res);
-      } catch (_) {}
+      } catch (_) { }
     });
 
     const { plan, expiry } = await fetchPlanForUser(uid);
@@ -1267,7 +1309,7 @@ app.get("/api/me/plan/stream", async (req, res) => {
   } catch (_) {
     try {
       res.end();
-    } catch (_) {}
+    } catch (_) { }
   }
 });
 
@@ -1329,15 +1371,15 @@ app.post("/api/labsflow/execute", async (req, res) => {
     const isVideoGeneration = isGenText || isGenStartImage || isGenStartEndImage || isGenRefImages || isGenExtend || isReshoot;
     const isImageGeneration = isFlowMediaImages;
     const requiresBrowserMode = isVideoGeneration || isImageGeneration;
-    
+
     if (requiresBrowserMode && payload) {
       try {
         // Cek apakah browser tersedia
         const browserStatus = await playwrightVeo.getBrowserStatus();
-        
+
         if (browserStatus.browserRunning && browserStatus.pageReady && browserStatus.isLoggedIn) {
           console.log(`[labsflow/execute] 🌐 Using browser mode for ${isImageGeneration ? 'image' : 'video'} generation...`);
-          
+
           // Execute request dari dalam browser context
           const browserResult = await playwrightVeo.executeApiRequest({
             url,
@@ -1345,13 +1387,13 @@ app.post("/api/labsflow/execute", async (req, res) => {
             headers: { Authorization: `Bearer ${bearer}` },
             payload
           });
-          
+
           console.log("[labsflow/execute] Browser mode result:", {
             status: browserResult.status,
             hasToken: browserResult.hasToken,
             success: browserResult.success
           });
-          
+
           // Return response dari browser
           return res.status(browserResult.status || 200).send(browserResult.data);
         } else {
@@ -1362,20 +1404,20 @@ app.post("/api/labsflow/execute", async (req, res) => {
         console.log("[labsflow/execute] Browser mode failed, falling back:", browserErr.message);
       }
     }
-    
+
     // ======= FALLBACK: Direct API (for non-video endpoints or when browser unavailable) =======
     let normalizedPayload = payload;
 
     const defaultContentType =
       isGenText ||
-      isGenStartImage ||
-      isGenStartEndImage ||
-      isGenRefImages ||
-      isGenExtend ||
-      isCheck ||
-      isReshoot ||
-      isSoundDemo ||
-      isFlowMediaImages
+        isGenStartImage ||
+        isGenStartEndImage ||
+        isGenRefImages ||
+        isGenExtend ||
+        isCheck ||
+        isReshoot ||
+        isSoundDemo ||
+        isFlowMediaImages
         ? "text/plain; charset=UTF-8"
         : "application/json";
 
@@ -1422,7 +1464,7 @@ app.post("/api/labsflow/execute", async (req, res) => {
       if (normalizedPayload?.clientContext?.recaptchaToken) {
         console.log("[labsflow/execute] ✓ Has reCAPTCHA token in payload");
       }
-    } catch (_) {}
+    } catch (_) { }
 
     const response = await fetch(url, {
       method,
@@ -1443,11 +1485,11 @@ app.post("/api/labsflow/execute", async (req, res) => {
       if (retryAfter) {
         res.set("Retry-After", retryAfter);
       }
-    } catch (_) {}
+    } catch (_) { }
 
     try {
       console.log("[labsflow/execute] status:", response.status);
-    } catch (_) {}
+    } catch (_) { }
     res.status(response.status).send(data);
   } catch (err) {
     console.error("Proxy error", err);
@@ -1473,8 +1515,8 @@ app.post("/api/upload_base64", async (req, res) => {
       contentType.includes("jpeg") || contentType.includes("jpg")
         ? "jpg"
         : contentType.includes("png")
-        ? "png"
-        : "bin";
+          ? "png"
+          : "bin";
     const safeName = (fileName || `upload-${Date.now()}`).replace(
       /[^a-zA-Z0-9_.-]/g,
       "_"
@@ -1523,9 +1565,9 @@ app.post("/api/labs/upload_image", async (req, res) => {
         const base = uploadUrl.includes("/upload/")
           ? uploadUrl
           : uploadUrl.replace(
-              "https://aisandbox-pa.googleapis.com/",
-              "https://aisandbox-pa.googleapis.com/upload/"
-            );
+            "https://aisandbox-pa.googleapis.com/",
+            "https://aisandbox-pa.googleapis.com/upload/"
+          );
         const hasQuery = base.includes("?");
         return base + (hasQuery ? "&" : "?") + "uploadType=media";
       })();
@@ -1615,7 +1657,7 @@ app.post("/api/labs/upload_image", async (req, res) => {
           "status:",
           resp.status
         );
-      } catch (_) {}
+      } catch (_) { }
       if (resp.ok) {
         uploadResp = resp;
       } else {
@@ -1694,7 +1736,7 @@ app.post("/api/labs/upload_image", async (req, res) => {
           "status:",
           resp.status
         );
-      } catch (_) {}
+      } catch (_) { }
       if (resp.ok) {
         uploadResp = resp;
         break;
@@ -1734,7 +1776,7 @@ app.post("/api/labs/upload_image", async (req, res) => {
           "status:",
           respBin.status
         );
-      } catch (_) {}
+      } catch (_) { }
       if (respBin.ok) uploadResp = respBin;
       else {
         try {
@@ -1767,7 +1809,7 @@ app.post("/api/labs/upload_image", async (req, res) => {
           "[labs/upload_image] try text/plain base64, status:",
           respPlain.status
         );
-      } catch (_) {}
+      } catch (_) { }
       if (respPlain.ok) uploadResp = respPlain;
       else {
         try {
@@ -1798,7 +1840,7 @@ app.post("/api/labs/upload_image", async (req, res) => {
           "[labs/upload_image] try text/plain dataUrl, status:",
           respDataUrl.status
         );
-      } catch (_) {}
+      } catch (_) { }
       if (respDataUrl.ok) uploadResp = respDataUrl;
       else {
         try {
@@ -1850,12 +1892,12 @@ app.post("/api/labs/upload_image", async (req, res) => {
     const uploadJson =
       typeof uploadData === "string"
         ? (() => {
-            try {
-              return JSON.parse(uploadData);
-            } catch {
-              return {};
-            }
-          })()
+          try {
+            return JSON.parse(uploadData);
+          } catch {
+            return {};
+          }
+        })()
         : uploadData;
     const uploadToken =
       uploadJson?.uploadToken ||
@@ -1921,12 +1963,12 @@ app.post("/api/labs/upload_image", async (req, res) => {
           const finJson =
             typeof finalizeData === "string"
               ? (() => {
-                  try {
-                    return JSON.parse(finalizeData);
-                  } catch {
-                    return {};
-                  }
-                })()
+                try {
+                  return JSON.parse(finalizeData);
+                } catch {
+                  return {};
+                }
+              })()
               : finalizeData;
           mediaId =
             finJson?.image?.metadata?.name ||
@@ -2137,7 +2179,7 @@ app.post("/api/sora/execute", async (req, res) => {
     if (response.ok) {
       try {
         bumpUsage(userForStats, "sora2");
-      } catch (_) {}
+      } catch (_) { }
 
       // If API returns a job ID (Async), persist it locally
       if (data && typeof data === "object" && (data.id || data.uuid)) {
@@ -2509,7 +2551,7 @@ app.get("/api/sora/status", async (req, res) => {
                 try {
                   const errText = await resp.text();
                   console.warn(`[sora/status] Error body: ${errText}`);
-                } catch (_) {}
+                } catch (_) { }
               }
             } catch (e) {
               console.warn(
@@ -2725,15 +2767,15 @@ const requireBrowserAdmin = async (req, res, next) => {
     // Cek via cookie plan
     const cookies = parseCookies(req.headers.cookie);
     const planFromCookie = String(cookies.plan || "").toLowerCase();
-    
+
     if (planFromCookie === "admin") {
       return next();
     }
-    
+
     // Fallback: cek via JWT jika ada
     const authHeader = String(req.headers["authorization"] || "");
     const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
-    
+
     if (token && srSupabase) {
       try {
         const { data: userData } = await srSupabase.auth.getUser(token);
@@ -2744,12 +2786,12 @@ const requireBrowserAdmin = async (req, res, next) => {
             return next();
           }
         }
-      } catch (_) {}
+      } catch (_) { }
     }
-    
-    return res.status(403).json({ 
-      success: false, 
-      error: "Akses ditolak. Fitur ini hanya untuk Admin." 
+
+    return res.status(403).json({
+      success: false,
+      error: "Akses ditolak. Fitur ini hanya untuk Admin."
     });
   } catch (e) {
     return res.status(500).json({ success: false, error: String(e) });
@@ -2805,7 +2847,7 @@ function broadcastBrowserEvent(event, data) {
   for (const res of browserEventSubscribers) {
     try {
       res.write(`event: ${event}\ndata: ${payload}\n\n`);
-    } catch (_) {}
+    } catch (_) { }
   }
 }
 
@@ -2849,21 +2891,21 @@ app.post("/api/browser/close", requireBrowserAdmin, async (req, res) => {
 const restartVisibleHandler = async (req, res) => {
   try {
     console.log("[Admin] Restarting browser in visible mode...");
-    
+
     // Close existing browser first
     await playwrightVeo.closeBrowser();
-    
+
     // Wait a bit
     await new Promise(r => setTimeout(r, 1000));
-    
+
     // Launch dengan forceVisible
     const result = await playwrightVeo.launchBrowser({ forceVisible: true });
-    
+
     if (result.success) {
       // Navigate ke Labs
       await playwrightVeo.navigateToLabs();
     }
-    
+
     res.json({ ...result, message: "Browser dibuka dalam mode visible. Silakan login di browser yang muncul." });
   } catch (err) {
     res.status(500).json({ success: false, error: String(err) });
@@ -2877,21 +2919,21 @@ app.post("/api/browser/restart-visible", requireBrowserAdmin, restartVisibleHand
 const restartHeadlessHandler = async (req, res) => {
   try {
     console.log("[Admin] Restarting browser in headless mode...");
-    
+
     // Close existing browser first
     await playwrightVeo.closeBrowser();
-    
+
     // Wait a bit
     await new Promise(r => setTimeout(r, 1000));
-    
+
     // Launch headless
     const result = await playwrightVeo.launchBrowser({ headless: true });
-    
+
     if (result.success) {
       // Navigate ke Labs
       await playwrightVeo.navigateToLabs();
     }
-    
+
     res.json({ ...result, message: "Browser sekarang jalan di background (headless). Session tersimpan." });
   } catch (err) {
     res.status(500).json({ success: false, error: String(err) });
@@ -2929,7 +2971,7 @@ app.post("/api/browser/generate", requireBrowserAdmin, async (req, res) => {
       return res.status(400).json({ success: false, error: "Prompt required" });
     }
     const jobId = `browser-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    
+
     // Jalankan generate di background
     playwrightVeo.generateVideo({
       jobId,
@@ -2938,7 +2980,7 @@ app.post("/api/browser/generate", requireBrowserAdmin, async (req, res) => {
       duration: duration || "8s",
       model: model || "veo-2",
     });
-    
+
     // Return job ID immediately
     res.json({ success: true, jobId, message: "Generate dimulai di browser" });
   } catch (err) {
@@ -2991,14 +3033,14 @@ app.get("/api/recaptcha-token-status", async (req, res) => {
       age: result.age || null,
       maxAge: result.maxAge || 120,
       fresh: result.fresh || false,
-      message: result.success 
-        ? `Token tersedia (${result.age}s)` 
+      message: result.success
+        ? `Token tersedia (${result.age}s)`
         : "Token tidak tersedia. Admin perlu capture token di Browser Mode."
     });
   } catch (err) {
-    res.json({ 
-      available: false, 
-      message: "Browser Mode belum aktif" 
+    res.json({
+      available: false,
+      message: "Browser Mode belum aktif"
     });
   }
 });
@@ -3070,7 +3112,7 @@ const startServer = async () => {
       for (const res of set) {
         try {
           res.write(line);
-        } catch (_) {}
+        } catch (_) { }
       }
     };
 
@@ -3103,7 +3145,7 @@ const startServer = async () => {
           const parsed = parseInt(String(ra), 10);
           if (!Number.isNaN(parsed) && parsed >= 0) retryAfterSec = parsed;
         }
-      } catch (_) {}
+      } catch (_) { }
       return { ok: resp.ok, status: resp.status, data, retryAfterSec };
     };
 
@@ -3209,7 +3251,7 @@ const startServer = async () => {
                     .map((op, i) => ({ name: op?.operation?.name, index: i }))
                     .filter((o) => o.name);
                   job.operations = ops;
-                } catch (_) {}
+                } catch (_) { }
                 pushEvent(jobId, "initial", { data: exec.data });
                 break;
               }
@@ -3257,7 +3299,7 @@ const startServer = async () => {
               pushEvent(jobId, "completed", { data: {} });
               try {
                 bumpUsage(job.user, "veo");
-              } catch (_) {}
+              } catch (_) { }
               return;
             }
             // Poll until done
@@ -3308,7 +3350,7 @@ const startServer = async () => {
                   pushEvent(jobId, "completed", { data: p.data });
                   try {
                     bumpUsage(job.user, "veo");
-                  } catch (_) {}
+                  } catch (_) { }
                   break;
                 }
               } else {
@@ -3450,7 +3492,7 @@ const startServer = async () => {
       req.on("close", () => {
         try {
           set.delete(res);
-        } catch (_) {}
+        } catch (_) { }
       });
       const job = jobs.get(jobId);
       if (job) {
@@ -3507,7 +3549,7 @@ const startServer = async () => {
                 isAllowed =
                   String(profile?.plan || "").toLowerCase() === "admin";
               }
-            } catch (_) {}
+            } catch (_) { }
             if (!isAllowed) {
               const email = String(cookies.auth_email || "").toLowerCase();
               if (
@@ -3540,24 +3582,24 @@ const startServer = async () => {
       console.log(
         `Labs Flow proxy server (Next.js + API) running at http://localhost:${PORT}`
       );
-      
+
       // Auto-launch browser untuk video generation
       console.log("");
       console.log("═══════════════════════════════════════════════════════════════");
       console.log("   🎬 AUTO-STARTING PLAYWRIGHT BROWSER FOR VIDEO GENERATION");
       console.log("═══════════════════════════════════════════════════════════════");
-      
+
       try {
         const sessionExists = playwrightVeo.hasValidSession();
         console.log(`[Server] Session exists: ${sessionExists}`);
-        
+
         if (sessionExists) {
           // Session ada, jalankan browser
           // TIDAK pakai headless karena reCAPTCHA mendeteksi headless browser
           console.log("[Server] ✓ Valid session found! Starting browser in visible mode...");
           console.log("[Server] Note: Headless mode tidak bekerja dengan reCAPTCHA, gunakan visible mode");
           const result = await playwrightVeo.launchBrowser(); // Default: visible mode
-          
+
           if (result.success) {
             // Navigate ke Labs untuk verify session
             const navResult = await playwrightVeo.navigateToLabs();
@@ -3580,7 +3622,7 @@ const startServer = async () => {
       } catch (err) {
         console.log("[Server] Browser auto-start error:", err.message);
       }
-      
+
       console.log("═══════════════════════════════════════════════════════════════");
       console.log("");
     });
