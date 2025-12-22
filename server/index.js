@@ -1333,12 +1333,8 @@ app.post("/api/labsflow/execute", async (req, res) => {
         .json({ error: "URL not allowed. Only googleapis.com/google.com." });
     }
 
+    // Bearer from env (optional if browser mode works)
     const bearer = process.env.LABS_BEARER;
-    if (!bearer) {
-      return res
-        .status(500)
-        .json({ error: "LABS_BEARER is not set on server." });
-    }
 
     // Decide remote Content-Type: Labs UI sends JSON as text/plain for video endpoints
     const lowerUrl = url.toLowerCase();
@@ -1384,7 +1380,7 @@ app.post("/api/labsflow/execute", async (req, res) => {
           const browserResult = await playwrightVeo.executeApiRequest({
             url,
             method,
-            headers: { Authorization: `Bearer ${bearer}` },
+            headers: bearer ? { Authorization: `Bearer ${bearer}` } : {},
             payload
           });
 
@@ -1406,6 +1402,14 @@ app.post("/api/labsflow/execute", async (req, res) => {
     }
 
     // ======= FALLBACK: Direct API (for non-video endpoints or when browser unavailable) =======
+    // ======= FALLBACK: Direct API (requires Bearer) =======
+    if (!bearer) {
+      console.error("[labsflow/execute] Fallback failed: LABS_BEARER missing");
+      return res.status(500).json({
+        error: "Bearer kadaluarsa, Minta bearer baru ke admin (LABS_BEARER is missing)",
+      });
+    }
+
     let normalizedPayload = payload;
 
     const defaultContentType =
