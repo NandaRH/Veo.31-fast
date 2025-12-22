@@ -595,7 +595,23 @@ export const executeApiRequest = async ({ url, method = "POST", headers = {}, pa
       return { success: false, error: "grecaptcha failed to load. Check VNC.", status: 500 };
     }
 
-    console.log("[Playwright] ✓ grecaptcha available, executing request...");
+    console.log("[Playwright] ✓ grecaptcha available. Simulating human behavior...");
+
+    // === HUMAN SIMULATION START ===
+    // Gerakkan mouse secara acak untuk menipu reCAPTCHA invsible
+    await activePage.mouse.move(100, 100);
+    await activePage.waitForTimeout(Math.random() * 500 + 200);
+    await activePage.mouse.move(200 + Math.random() * 100, 300 + Math.random() * 100, { steps: 10 });
+    await activePage.waitForTimeout(Math.random() * 500 + 200);
+
+    // Klik sembarang elemen aman (misal: body) untuk fokus
+    try {
+      await activePage.click('body', { position: { x: 10, y: 10 } });
+    } catch (_) { }
+    await activePage.waitForTimeout(1000);
+    // === HUMAN SIMULATION END ===
+
+    console.log("[Playwright] Executing API request...");
 
     const result = await activePage.evaluate(async ({ url, method, headers, payload }) => {
       try {
