@@ -8,6 +8,7 @@
     "dev": "node server/index.js",
     "build": "next build",
     "start": "node server/index.js",
+    "start:railway": "/docker-entrypoint.sh",
     "server": "node server/index.js",
     "electron:dev": "cross-env PORT=8790 electron .",
     "electron:build": "electron-builder --win --x64",
