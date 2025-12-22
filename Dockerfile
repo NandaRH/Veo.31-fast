@@ -1,5 +1,7 @@
 FROM node:20-slim
 
+# Force rebuild: 2024-12-22T21:05:00 - Clear cache for NEXT_PUBLIC env vars
+
 # 1. Install Dependencies Sistem
 # Tambahan 'procps' (untuk sinyal proses) dan 'dumb-init' (wajib untuk Docker process manager)
 RUN apt-get update && apt-get install -y \
