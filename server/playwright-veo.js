@@ -52,7 +52,7 @@ const ensureUserDataDir = () => {
 export const hasValidSession = () => {
   try {
     const dataDir = BROWSER_TYPE === "firefox" ? FIREFOX_DATA_DIR : USER_DATA_DIR;
-    
+
     if (BROWSER_TYPE === "firefox") {
       // Firefox: cek cookies.sqlite
       const firefoxCookies = path.join(dataDir, "cookies.sqlite");
@@ -64,11 +64,11 @@ export const hasValidSession = () => {
       const cookiesPath2 = path.join(dataDir, "Profile 1", "Cookies");
       const networkPath = path.join(dataDir, "Default", "Network");
       const networkPath2 = path.join(dataDir, "Profile 1", "Network");
-      
-      return fs.existsSync(cookiesPath) || 
-             fs.existsSync(cookiesPath2) || 
-             fs.existsSync(networkPath) ||
-             fs.existsSync(networkPath2);
+
+      return fs.existsSync(cookiesPath) ||
+        fs.existsSync(cookiesPath2) ||
+        fs.existsSync(networkPath) ||
+        fs.existsSync(networkPath2);
     }
   } catch (e) {
     return false;
@@ -92,17 +92,17 @@ export const launchBrowser = async (options = {}) => {
   try {
     // Auto-detect session
     const sessionExists = hasValidSession();
-    
+
     // PENTING: Headless mode TIDAK bekerja dengan Google reCAPTCHA!
     // Karena launchPersistentContext tidak support headless: "new", 
     // kita default ke visible mode (false)
     // Untuk Railway, gunakan Xvfb (virtual display)
     const forceHeadless = options.headless === true || process.env.FORCE_HEADLESS === "1";
     const forceVisible = options.forceVisible === true || process.env.FORCE_VISIBLE === "1";
-    
+
     // Default: visible mode (false) karena headless tidak bekerja dengan reCAPTCHA
     const useHeadless = forceHeadless && !forceVisible;
-    
+
     console.log("[Playwright] Launching browser...");
     console.log("[Playwright] Session exists:", sessionExists);
     console.log("[Playwright] Force headless:", forceHeadless);
@@ -112,8 +112,8 @@ export const launchBrowser = async (options = {}) => {
 
     if (!sessionExists && useHeadless) {
       console.log("[Playwright] ⚠️ No session found! Please run locally first to login.");
-      return { 
-        success: false, 
+      return {
+        success: false,
         error: "Session tidak ditemukan. Jalankan server di lokal dan login terlebih dahulu.",
         needsLogin: true
       };
@@ -121,14 +121,14 @@ export const launchBrowser = async (options = {}) => {
 
     // Launch persistent context berdasarkan browser type
     const dataDir = BROWSER_TYPE === "firefox" ? FIREFOX_DATA_DIR : USER_DATA_DIR;
-    
+
     // Pastikan folder ada
     if (!fs.existsSync(dataDir)) {
       fs.mkdirSync(dataDir, { recursive: true });
     }
-    
+
     console.log("[Playwright] Using data dir:", dataDir);
-    
+
     if (BROWSER_TYPE === "firefox") {
       // Firefox config
       browserContext = await firefox.launchPersistentContext(dataDir, {
@@ -214,14 +214,14 @@ const setupRecaptchaInterceptor = async () => {
   activePage.on("response", async (response) => {
     try {
       const url = response.url();
-      
+
       // Capture reCAPTCHA enterprise reload response
       if (url.includes("/recaptcha/enterprise/reload") || url.includes("/recaptcha/api2/reload")) {
         console.log("[Playwright] Captured reCAPTCHA response from:", url);
-        
+
         try {
           const text = await response.text();
-          
+
           // Response format: )]}\n["rresp","TOKEN_HERE",...
           // Parse the token from response
           const tokenMatch = text.match(/\["rresp","([^"]+)"/);
@@ -229,7 +229,7 @@ const setupRecaptchaInterceptor = async () => {
             capturedRecaptchaToken = tokenMatch[1];
             tokenCapturedAt = Date.now();
             console.log("[Playwright] ✓ reCAPTCHA token captured! Length:", capturedRecaptchaToken.length);
-            veoEvents.emit("recaptcha-token-captured", { 
+            veoEvents.emit("recaptcha-token-captured", {
               token: capturedRecaptchaToken.substring(0, 50) + "...",
               length: capturedRecaptchaToken.length,
               timestamp: tokenCapturedAt
@@ -251,7 +251,7 @@ const setupRecaptchaInterceptor = async () => {
               capturedRecaptchaToken = payload.clientContext.recaptchaToken;
               tokenCapturedAt = Date.now();
               console.log("[Playwright] ✓ Token extracted from API request! Length:", capturedRecaptchaToken.length);
-              veoEvents.emit("recaptcha-token-captured", { 
+              veoEvents.emit("recaptcha-token-captured", {
                 token: capturedRecaptchaToken.substring(0, 50) + "...",
                 length: capturedRecaptchaToken.length,
                 timestamp: tokenCapturedAt,
@@ -259,7 +259,7 @@ const setupRecaptchaInterceptor = async () => {
               });
             }
           }
-        } catch (_) {}
+        } catch (_) { }
       }
     } catch (err) {
       // Ignore errors during interception
@@ -286,7 +286,7 @@ export const closeBrowser = async () => {
     // Reset token state
     capturedRecaptchaToken = null;
     tokenCapturedAt = null;
-    
+
     veoEvents.emit("browser-status", { status: "closed" });
     return { success: true, message: "Browser ditutup" };
   } catch (error) {
@@ -352,26 +352,28 @@ export const navigateToLabs = async () => {
  */
 export const getBrowserStatus = async () => {
   const status = {
-    browserRunning: !!browserContext,
+    browserRunning: !!browserInstance || !!browserContext,
     pageReady: !!activePage,
     isGenerating,
     currentJobId,
-    currentUrl: null,
+    currentUrl: activePage ? activePage.url() : null,
     isLoggedIn: false,
     isOnVideoFx: false,
-    hasToken: !!capturedRecaptchaToken,
-    tokenAge: tokenCapturedAt ? Math.floor((Date.now() - tokenCapturedAt) / 1000) : null,
+    hasToken: !!capturedRecaptchaToken && (Date.now() - tokenCapturedAt < 5400000), // < 1.5 jam
+    tokenAge: tokenCapturedAt ? Math.floor((Date.now() - tokenCapturedAt) / 1000) : null
   };
 
   if (activePage) {
     try {
-      status.currentUrl = activePage.url();
-      status.isOnVideoFx =
-        status.currentUrl.includes("video-fx") ||
-        status.currentUrl.includes("labs.google/fx");
-      status.isLoggedIn = !status.currentUrl.includes("accounts.google.com");
+      // Cek apakah login dengan melihat avatar atau elemen spesifik Google
+      // Cara paling akurat untuk Google Labs: cek apakah ada tombol "Sign in" atau profile
+      const userProfile = await activePage.$('img[src*="googleusercontent.com"], a[href*="accounts.google.com/SignOut"]');
+      const signInBtn = await activePage.$('a[href*="accounts.google.com/ServiceLogin"]');
+
+      status.isLoggedIn = !!userProfile && !signInBtn;
+      status.isOnVideoFx = status.currentUrl.includes("video-fx") || status.currentUrl.includes("labs.google");
     } catch (e) {
-      // Page might be closed
+      status.error = String(e);
     }
   }
 
@@ -385,7 +387,7 @@ export const getBrowserStatus = async () => {
 export const getRecaptchaToken = async () => {
   // Check if token exists and is fresh (< 2 minutes old)
   const TOKEN_MAX_AGE_MS = 2 * 60 * 1000; // 2 minutes
-  
+
   if (capturedRecaptchaToken && tokenCapturedAt) {
     const age = Date.now() - tokenCapturedAt;
     if (age < TOKEN_MAX_AGE_MS) {
@@ -424,7 +426,7 @@ export const triggerRecaptchaCapture = async (prompt = "test video generation") 
   try {
     isCapturingToken = true;
     veoEvents.emit("token-capture-started", { prompt });
-    
+
     console.log("[Playwright] Triggering reCAPTCHA via JavaScript...");
 
     // Pastikan di halaman Video FX
@@ -446,7 +448,7 @@ export const triggerRecaptchaCapture = async (prompt = "test video generation") 
 
     // === Langsung execute reCAPTCHA via JavaScript ===
     console.log("[Playwright] Executing grecaptcha.enterprise.execute()...");
-    
+
     try {
       // Coba execute reCAPTCHA langsung dengan site key yang digunakan Google Labs
       const token = await activePage.evaluate(async () => {
@@ -485,14 +487,14 @@ export const triggerRecaptchaCapture = async (prompt = "test video generation") 
         capturedRecaptchaToken = token;
         tokenCapturedAt = Date.now();
         console.log("[Playwright] ✓ Token captured via direct JS execution! Length:", token.length);
-        
+
         isCapturingToken = false;
-        veoEvents.emit("token-capture-success", { 
+        veoEvents.emit("token-capture-success", {
           token: token.substring(0, 50) + "...",
           length: token.length,
           method: "direct-js"
         });
-        
+
         return {
           success: true,
           token: token,
@@ -509,12 +511,12 @@ export const triggerRecaptchaCapture = async (prompt = "test video generation") 
     // Tunggu token dari network intercept (mungkin sudah ada dari aktivitas sebelumnya)
     const startTime = Date.now();
     const timeout = 15000;
-    
+
     while (Date.now() - startTime < timeout) {
       if (capturedRecaptchaToken) {
         console.log("[Playwright] ✓ Token captured from network intercept!");
         isCapturingToken = false;
-        veoEvents.emit("token-capture-success", { 
+        veoEvents.emit("token-capture-success", {
           token: capturedRecaptchaToken.substring(0, 50) + "...",
           length: capturedRecaptchaToken.length,
           method: "network-intercept"
@@ -555,27 +557,27 @@ export const executeApiRequest = async ({ url, method = "POST", headers = {}, pa
 
   try {
     console.log("[Playwright] Executing API request from browser context...");
-    
+
     // SELALU reload halaman Labs untuk fresh grecaptcha context
     console.log("[Playwright] Reloading Labs page for fresh context...");
     await activePage.goto(GOOGLE_LABS_URL, {
       waitUntil: "networkidle",
       timeout: 30000,
     });
-    
+
     // Tunggu grecaptcha fully loaded
     await activePage.waitForTimeout(3000);
-    
+
     // Verify grecaptcha tersedia
     const hasGrecaptcha = await activePage.evaluate(() => {
       return typeof grecaptcha !== 'undefined' && typeof grecaptcha.enterprise !== 'undefined';
     });
-    
+
     if (!hasGrecaptcha) {
       console.log("[Playwright] ⚠️ grecaptcha not available! Browser mungkin perlu login ulang.");
       return { success: false, error: "grecaptcha tidak tersedia. Coba restart-visible untuk login ulang.", status: 403 };
     }
-    
+
     console.log("[Playwright] ✓ grecaptcha available, executing request...");
 
     // Execute reCAPTCHA dan API request dari dalam browser
@@ -636,10 +638,10 @@ export const executeApiRequest = async ({ url, method = "POST", headers = {}, pa
       }
     }, { url, method, headers, payload });
 
-    console.log("[Playwright] API request result:", { 
-      status: result.status, 
+    console.log("[Playwright] API request result:", {
+      status: result.status,
       hasToken: result.hasToken,
-      success: result.success 
+      success: result.success
     });
 
     return result;
@@ -694,15 +696,15 @@ export const generateVideo = async (options = {}) => {
       const aspectButtons = await activePage.$$(
         'button[aria-label*="aspect"], button[data-aspect-ratio], [class*="aspect"]'
       );
-      
+
       const aspectMap = {
         "16:9": "16:9",
         "9:16": "9:16",
         "1:1": "1:1",
       };
-      
+
       const targetAspect = aspectMap[aspectRatio] || "16:9";
-      
+
       for (const btn of aspectButtons) {
         const text = await btn.textContent();
         if (text && text.includes(targetAspect)) {
@@ -766,7 +768,7 @@ export const generateVideo = async (options = {}) => {
             const isEnabled = await generateBtn.isEnabled();
             if (isVisible && isEnabled) break;
           }
-        } catch (_) {}
+        } catch (_) { }
       }
 
       if (generateBtn) {
@@ -809,7 +811,7 @@ export const generateVideo = async (options = {}) => {
             continue;
           }
         }
-      } catch (_) {}
+      } catch (_) { }
 
       // Cek progress
       try {
@@ -823,7 +825,7 @@ export const generateVideo = async (options = {}) => {
             attempt: attempts,
           });
         }
-      } catch (_) {}
+      } catch (_) { }
 
       // Cek video ready
       try {
@@ -848,7 +850,7 @@ export const generateVideo = async (options = {}) => {
             }
           }
         }
-      } catch (_) {}
+      } catch (_) { }
 
       if (attempts % 10 === 0) {
         console.log(`[Playwright] Waiting for video... (${attempts}s)`);
@@ -905,7 +907,7 @@ export const cancelGenerate = async () => {
         if (cancelBtn) {
           await cancelBtn.click();
         }
-      } catch (_) {}
+      } catch (_) { }
     }
 
     veoEvents.emit("job-cancelled", { jobId: cancelledJobId });
@@ -935,6 +937,8 @@ export const takeScreenshot = async () => {
     return { success: false, error: String(error) };
   }
 };
+
+
 
 export default {
   launchBrowser,
