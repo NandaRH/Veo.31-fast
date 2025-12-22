@@ -29,6 +29,9 @@ RUN apt-get update && apt-get install -y \
     xvfb \
     libx11-xcb1 \
     libxcb1 \
+    x11vnc \
+    novnc \
+    unzip \
     --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
@@ -55,8 +58,8 @@ RUN npm run build
 # Penting: Kita beri permission agar script bisa baca/tulis
 RUN mkdir -p browser-data && chmod 777 browser-data
 
-# Expose port
-EXPOSE 8790
+# Expose ports: 8790 (app), 5900 (VNC), 6080 (noVNC web)
+EXPOSE 8790 5900 6080
 
 # Environment variables
 ENV NODE_ENV=production
