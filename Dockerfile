@@ -52,8 +52,13 @@ RUN npx playwright install chromium
 # 5. Copy Source Code
 COPY . .
 
-# 6. Build Next.js
-# HAPUS "|| true". Jika build gagal, kita mau deploy ini gagal agar ketahuan errornya.
+# 6. Build Next.js with NEXT_PUBLIC env vars
+# Railway akan pass env vars sebagai build args secara otomatis
+ARG NEXT_PUBLIC_SUPABASE_URL
+ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
+ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL
+ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY
+
 RUN npm run build
 
 # 7. Create browser-data directory (Untuk Railway Volume)
