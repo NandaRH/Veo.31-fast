@@ -65,10 +65,14 @@ export default function DashboardPage() {
 
   const refreshCredits = async () => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
       const token = String(session?.access_token || "");
       if (!token) return;
-      const r = await fetch("/api/me/credits", { headers: { Authorization: `Bearer ${token}` } });
+      const r = await fetch("/api/me/credits", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       const d = await r.json();
       if (r.ok) {
         setCredits(Number(d?.credits || 0));

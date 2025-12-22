@@ -65,18 +65,27 @@ export const legacyMarkup = String.raw`
               <span>Mode Prompt</span>
             </button>
             <div id="modePromptSection" class="collapsible-body">
-              <div class="mode-grid">
-                <a id="modeSingleBtn" class="mode-card active" href="/prompt-tunggal">
-                  <div style="font-weight:700;">Prompt Tunggal</div>
-                  <div class="settings-help">Hasilkan satu video</div>
+              <div class="mode-grid-new">
+                <a id="modeSingleBtn" class="mode-card-new active" href="/prompt-tunggal">
+                  <div class="mode-card-icon">📝</div>
+                  <div class="mode-card-content">
+                    <div class="mode-card-title">Prompt Tunggal</div>
+                    <div class="mode-card-subtitle">Hasilkan satu video</div>
+                  </div>
                 </a>
-                <a id="modeBatchBtn" class="mode-card" href="/prompt-batch">
-                  <div style="font-weight:700;">Prompt Batch</div>
-                  <div class="settings-help">Hasilkan video massal</div>
+                <a id="modeBatchBtn" class="mode-card-new" href="/prompt-batch">
+                  <div class="mode-card-icon">📚</div>
+                  <div class="mode-card-content">
+                    <div class="mode-card-title">Prompt Batch</div>
+                    <div class="mode-card-subtitle">Hasilkan video massal</div>
+                  </div>
                 </a>
-                <a id="modeFrameBtn" class="mode-card" href="/frame-ke-video">
-                  <div style="font-weight:700;">Frame → Video</div>
-                  <div class="settings-help">Gabungkan gambar awal & akhir</div>
+                <a id="modeFrameBtn" class="mode-card-new" href="/frame-ke-video">
+                  <div class="mode-card-icon">🎬</div>
+                  <div class="mode-card-content">
+                    <div class="mode-card-title">Frame → Video</div>
+                    <div class="mode-card-subtitle">Gabungkan gambar awal & akhir</div>
+                  </div>
                 </a>
               </div>
             </div>

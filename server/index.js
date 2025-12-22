@@ -9,6 +9,9 @@ import ffmpeg from "fluent-ffmpeg";
 import ffmpegPath from "ffmpeg-static";
 import { createClient } from "@supabase/supabase-js";
 
+// Playwright Browser Automation untuk bypass reCAPTCHA
+import playwrightVeo from "./playwright-veo.js";
+
 const envLocalPath = path.resolve(process.cwd(), ".env.server.local");
 
 // Prefer .env.server.local, fallback to .env
@@ -1321,7 +1324,47 @@ app.post("/api/labsflow/execute", async (req, res) => {
       "/flowmedia:batchgenerateimages"
     );
 
-    const normalizedPayload = payload;
+    // ======= BROWSER MODE: Execute API from browser context =======
+    // Untuk video & image generation, HARUS request dari browser agar token valid
+    const isVideoGeneration = isGenText || isGenStartImage || isGenStartEndImage || isGenRefImages || isGenExtend || isReshoot;
+    const isImageGeneration = isFlowMediaImages;
+    const requiresBrowserMode = isVideoGeneration || isImageGeneration;
+    
+    if (requiresBrowserMode && payload) {
+      try {
+        // Cek apakah browser tersedia
+        const browserStatus = await playwrightVeo.getBrowserStatus();
+        
+        if (browserStatus.browserRunning && browserStatus.pageReady && browserStatus.isLoggedIn) {
+          console.log(`[labsflow/execute] 🌐 Using browser mode for ${isImageGeneration ? 'image' : 'video'} generation...`);
+          
+          // Execute request dari dalam browser context
+          const browserResult = await playwrightVeo.executeApiRequest({
+            url,
+            method,
+            headers: { Authorization: `Bearer ${bearer}` },
+            payload
+          });
+          
+          console.log("[labsflow/execute] Browser mode result:", {
+            status: browserResult.status,
+            hasToken: browserResult.hasToken,
+            success: browserResult.success
+          });
+          
+          // Return response dari browser
+          return res.status(browserResult.status || 200).send(browserResult.data);
+        } else {
+          console.log("[labsflow/execute] ⚠ Browser not ready, falling back to direct API...");
+          console.log("[labsflow/execute] Browser status:", browserStatus);
+        }
+      } catch (browserErr) {
+        console.log("[labsflow/execute] Browser mode failed, falling back:", browserErr.message);
+      }
+    }
+    
+    // ======= FALLBACK: Direct API (for non-video endpoints or when browser unavailable) =======
+    let normalizedPayload = payload;
 
     const defaultContentType =
       isGenText ||
@@ -1343,11 +1386,15 @@ app.post("/api/labsflow/execute", async (req, res) => {
       ...headers,
     };
 
-    if (isSoundDemo) {
+    // Add Origin and Referer for ALL video/image-related endpoints
+    if (isVideoGeneration || isImageGeneration || isSoundDemo || isCheck) {
       if (!mergedHeaders["Origin"])
         mergedHeaders["Origin"] = "https://labs.google";
       if (!mergedHeaders["Referer"])
         mergedHeaders["Referer"] = "https://labs.google/";
+    }
+
+    if (isSoundDemo) {
       if (!headers["Accept"]) mergedHeaders["Accept"] = "*/*";
       if (!mergedHeaders["Accept-Language"])
         mergedHeaders["Accept-Language"] = "en-US,en;q=0.9";
@@ -1363,13 +1410,17 @@ app.post("/api/labsflow/execute", async (req, res) => {
         "ct:",
         mergedHeaders["Content-Type"]
       );
-      if (payload && Array.isArray(payload.requests)) {
-        const first = payload.requests[0] || {};
+      if (normalizedPayload && Array.isArray(normalizedPayload.requests)) {
+        const first = normalizedPayload.requests[0] || {};
         console.log("[labsflow/execute] first request sample:", {
           aspectRatio: first.aspectRatio,
           videoModelKey: first.videoModelKey,
           hasPrimaryMediaId: !!first.primaryMediaId,
         });
+      }
+      // Log if token is present
+      if (normalizedPayload?.clientContext?.recaptchaToken) {
+        console.log("[labsflow/execute] ✓ Has reCAPTCHA token in payload");
       }
     } catch (_) {}
 
@@ -1379,7 +1430,7 @@ app.post("/api/labsflow/execute", async (req, res) => {
       body:
         method.toUpperCase() === "GET"
           ? undefined
-          : JSON.stringify(payload ?? {}),
+          : JSON.stringify(normalizedPayload ?? {}),
     });
 
     const contentType = response.headers.get("content-type") || "";
@@ -2663,6 +2714,308 @@ app.get("/api/config", (req, res) => {
   res.json(config);
 });
 
+// =============================================================================
+// === PLAYWRIGHT BROWSER AUTOMATION ENDPOINTS (bypass reCAPTCHA) ==============
+// === ADMIN ONLY - Fitur ini hanya untuk admin =================================
+// =============================================================================
+
+// Middleware untuk memeriksa apakah user adalah admin (via cookie atau JWT)
+const requireBrowserAdmin = async (req, res, next) => {
+  try {
+    // Cek via cookie plan
+    const cookies = parseCookies(req.headers.cookie);
+    const planFromCookie = String(cookies.plan || "").toLowerCase();
+    
+    if (planFromCookie === "admin") {
+      return next();
+    }
+    
+    // Fallback: cek via JWT jika ada
+    const authHeader = String(req.headers["authorization"] || "");
+    const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+    
+    if (token && srSupabase) {
+      try {
+        const { data: userData } = await srSupabase.auth.getUser(token);
+        const uid = String(userData?.user?.id || "");
+        if (uid) {
+          const { plan } = await fetchPlanForUser(uid);
+          if (String(plan || "").toLowerCase() === "admin") {
+            return next();
+          }
+        }
+      } catch (_) {}
+    }
+    
+    return res.status(403).json({ 
+      success: false, 
+      error: "Akses ditolak. Fitur ini hanya untuk Admin." 
+    });
+  } catch (e) {
+    return res.status(500).json({ success: false, error: String(e) });
+  }
+};
+
+// Store SSE connections for browser events
+const browserEventSubscribers = new Set();
+
+// Forward playwright events to SSE subscribers
+playwrightVeo.veoEvents.on("browser-status", (data) => {
+  broadcastBrowserEvent("browser-status", data);
+});
+playwrightVeo.veoEvents.on("login-required", (data) => {
+  broadcastBrowserEvent("login-required", data);
+});
+playwrightVeo.veoEvents.on("ready", (data) => {
+  broadcastBrowserEvent("ready", data);
+});
+playwrightVeo.veoEvents.on("captcha-required", (data) => {
+  broadcastBrowserEvent("captcha-required", data);
+});
+playwrightVeo.veoEvents.on("job-started", (data) => {
+  broadcastBrowserEvent("job-started", data);
+});
+playwrightVeo.veoEvents.on("job-progress", (data) => {
+  broadcastBrowserEvent("job-progress", data);
+});
+playwrightVeo.veoEvents.on("job-completed", (data) => {
+  broadcastBrowserEvent("job-completed", data);
+});
+playwrightVeo.veoEvents.on("job-failed", (data) => {
+  broadcastBrowserEvent("job-failed", data);
+});
+playwrightVeo.veoEvents.on("job-cancelled", (data) => {
+  broadcastBrowserEvent("job-cancelled", data);
+});
+playwrightVeo.veoEvents.on("recaptcha-token-captured", (data) => {
+  broadcastBrowserEvent("recaptcha-token-captured", data);
+});
+playwrightVeo.veoEvents.on("token-capture-started", (data) => {
+  broadcastBrowserEvent("token-capture-started", data);
+});
+playwrightVeo.veoEvents.on("token-capture-success", (data) => {
+  broadcastBrowserEvent("token-capture-success", data);
+});
+playwrightVeo.veoEvents.on("token-capture-failed", (data) => {
+  broadcastBrowserEvent("token-capture-failed", data);
+});
+
+function broadcastBrowserEvent(event, data) {
+  const payload = JSON.stringify({ event, ...data, timestamp: Date.now() });
+  for (const res of browserEventSubscribers) {
+    try {
+      res.write(`event: ${event}\ndata: ${payload}\n\n`);
+    } catch (_) {}
+  }
+}
+
+// SSE endpoint untuk browser events (Admin only)
+app.get("/api/browser/events", requireBrowserAdmin, (req, res) => {
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache",
+    Connection: "keep-alive",
+    "Access-Control-Allow-Origin": "*",
+  });
+  res.write("event: connected\ndata: {}\n\n");
+  browserEventSubscribers.add(res);
+  req.on("close", () => {
+    browserEventSubscribers.delete(res);
+  });
+});
+
+// Launch browser (Admin only)
+app.post("/api/browser/launch", requireBrowserAdmin, async (req, res) => {
+  try {
+    const result = await playwrightVeo.launchBrowser(req.body || {});
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, error: String(err) });
+  }
+});
+
+// Close browser (Admin only)
+app.post("/api/browser/close", requireBrowserAdmin, async (req, res) => {
+  try {
+    const result = await playwrightVeo.closeBrowser();
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, error: String(err) });
+  }
+});
+
+// Restart browser dengan VISIBLE mode (untuk login/ganti akun)
+// Support both GET and POST for convenience
+const restartVisibleHandler = async (req, res) => {
+  try {
+    console.log("[Admin] Restarting browser in visible mode...");
+    
+    // Close existing browser first
+    await playwrightVeo.closeBrowser();
+    
+    // Wait a bit
+    await new Promise(r => setTimeout(r, 1000));
+    
+    // Launch dengan forceVisible
+    const result = await playwrightVeo.launchBrowser({ forceVisible: true });
+    
+    if (result.success) {
+      // Navigate ke Labs
+      await playwrightVeo.navigateToLabs();
+    }
+    
+    res.json({ ...result, message: "Browser dibuka dalam mode visible. Silakan login di browser yang muncul." });
+  } catch (err) {
+    res.status(500).json({ success: false, error: String(err) });
+  }
+};
+
+app.get("/api/browser/restart-visible", requireBrowserAdmin, restartVisibleHandler);
+app.post("/api/browser/restart-visible", requireBrowserAdmin, restartVisibleHandler);
+
+// Restart browser ke HEADLESS mode (setelah login)
+const restartHeadlessHandler = async (req, res) => {
+  try {
+    console.log("[Admin] Restarting browser in headless mode...");
+    
+    // Close existing browser first
+    await playwrightVeo.closeBrowser();
+    
+    // Wait a bit
+    await new Promise(r => setTimeout(r, 1000));
+    
+    // Launch headless
+    const result = await playwrightVeo.launchBrowser({ headless: true });
+    
+    if (result.success) {
+      // Navigate ke Labs
+      await playwrightVeo.navigateToLabs();
+    }
+    
+    res.json({ ...result, message: "Browser sekarang jalan di background (headless). Session tersimpan." });
+  } catch (err) {
+    res.status(500).json({ success: false, error: String(err) });
+  }
+};
+
+app.get("/api/browser/restart-headless", requireBrowserAdmin, restartHeadlessHandler);
+app.post("/api/browser/restart-headless", requireBrowserAdmin, restartHeadlessHandler);
+
+// Navigate to Google Labs (Admin only)
+app.post("/api/browser/navigate", requireBrowserAdmin, async (req, res) => {
+  try {
+    const result = await playwrightVeo.navigateToLabs();
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, error: String(err) });
+  }
+});
+
+// Get browser status (Admin only)
+app.get("/api/browser/status", requireBrowserAdmin, async (req, res) => {
+  try {
+    const status = await playwrightVeo.getBrowserStatus();
+    res.json(status);
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
+// Generate video via browser - Admin only (dengan CAPTCHA manual jika perlu)
+app.post("/api/browser/generate", requireBrowserAdmin, async (req, res) => {
+  try {
+    const { prompt, aspectRatio, duration, model } = req.body || {};
+    if (!prompt) {
+      return res.status(400).json({ success: false, error: "Prompt required" });
+    }
+    const jobId = `browser-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    
+    // Jalankan generate di background
+    playwrightVeo.generateVideo({
+      jobId,
+      prompt,
+      aspectRatio: aspectRatio || "16:9",
+      duration: duration || "8s",
+      model: model || "veo-2",
+    });
+    
+    // Return job ID immediately
+    res.json({ success: true, jobId, message: "Generate dimulai di browser" });
+  } catch (err) {
+    res.status(500).json({ success: false, error: String(err) });
+  }
+});
+
+// Cancel browser generate (Admin only)
+app.post("/api/browser/cancel", requireBrowserAdmin, async (req, res) => {
+  try {
+    const result = await playwrightVeo.cancelGenerate();
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, error: String(err) });
+  }
+});
+
+// Screenshot - Admin only (debugging)
+app.get("/api/browser/screenshot", requireBrowserAdmin, async (req, res) => {
+  try {
+    const result = await playwrightVeo.takeScreenshot();
+    if (result.success) {
+      res.json(result);
+    } else {
+      res.status(500).json(result);
+    }
+  } catch (err) {
+    res.status(500).json({ success: false, error: String(err) });
+  }
+});
+
+// Get captured reCAPTCHA token (Admin only - full token)
+// Token ini bisa dipakai untuk API generate yang sudah ada
+app.get("/api/browser/get-recaptcha-token", requireBrowserAdmin, async (req, res) => {
+  try {
+    const result = await playwrightVeo.getRecaptchaToken();
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, error: String(err) });
+  }
+});
+
+// Cek status token (Public - untuk UI generate pages)
+// Hanya return status, bukan token lengkap
+app.get("/api/recaptcha-token-status", async (req, res) => {
+  try {
+    const result = await playwrightVeo.getRecaptchaToken();
+    res.json({
+      available: result.success,
+      age: result.age || null,
+      maxAge: result.maxAge || 120,
+      fresh: result.fresh || false,
+      message: result.success 
+        ? `Token tersedia (${result.age}s)` 
+        : "Token tidak tersedia. Admin perlu capture token di Browser Mode."
+    });
+  } catch (err) {
+    res.json({ 
+      available: false, 
+      message: "Browser Mode belum aktif" 
+    });
+  }
+});
+
+// Trigger reCAPTCHA capture - klik Generate di browser untuk capture token
+app.post("/api/browser/trigger-token-capture", requireBrowserAdmin, async (req, res) => {
+  try {
+    const { prompt } = req.body || {};
+    const result = await playwrightVeo.triggerRecaptchaCapture(prompt || "beautiful sunset over ocean waves");
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, error: String(err) });
+  }
+});
+
+// =============================================================================
+
 // === Simple per-IP rate limiter for /api/generate ===
 const RATE_LIMIT_WINDOW_MS = parseInt(
   process.env.RATE_LIMIT_WINDOW_MS || "60000",
@@ -3183,10 +3536,53 @@ const startServer = async () => {
     });
 
     app.all("*", (req, res) => handleNext(req, res));
-    app.listen(PORT, () => {
+    app.listen(PORT, async () => {
       console.log(
         `Labs Flow proxy server (Next.js + API) running at http://localhost:${PORT}`
       );
+      
+      // Auto-launch browser untuk video generation
+      console.log("");
+      console.log("═══════════════════════════════════════════════════════════════");
+      console.log("   🎬 AUTO-STARTING PLAYWRIGHT BROWSER FOR VIDEO GENERATION");
+      console.log("═══════════════════════════════════════════════════════════════");
+      
+      try {
+        const sessionExists = playwrightVeo.hasValidSession();
+        console.log(`[Server] Session exists: ${sessionExists}`);
+        
+        if (sessionExists) {
+          // Session ada, jalankan browser
+          // TIDAK pakai headless karena reCAPTCHA mendeteksi headless browser
+          console.log("[Server] ✓ Valid session found! Starting browser in visible mode...");
+          console.log("[Server] Note: Headless mode tidak bekerja dengan reCAPTCHA, gunakan visible mode");
+          const result = await playwrightVeo.launchBrowser(); // Default: visible mode
+          
+          if (result.success) {
+            // Navigate ke Labs untuk verify session
+            const navResult = await playwrightVeo.navigateToLabs();
+            console.log("[Server] ✓ Browser ready! Headless:", result.headless);
+            console.log("[Server] ✓ Navigate result:", navResult.message || "OK");
+          } else {
+            console.log("[Server] ⚠ Browser launch failed:", result.error);
+          }
+        } else {
+          // Session tidak ada
+          console.log("");
+          console.log("   ⚠️  SESSION TIDAK DITEMUKAN!");
+          console.log("   📋  Langkah untuk setup:");
+          console.log("   1. Jalankan server di LOKAL (laptop admin)");
+          console.log("   2. Akses /admin/browser dan klik Launch Browser");
+          console.log("   3. Login ke Google di browser yang muncul");
+          console.log("   4. Deploy folder browser-data/ ke Railway");
+          console.log("");
+        }
+      } catch (err) {
+        console.log("[Server] Browser auto-start error:", err.message);
+      }
+      
+      console.log("═══════════════════════════════════════════════════════════════");
+      console.log("");
     });
   } catch (err) {
     console.error("Failed to start server", err);

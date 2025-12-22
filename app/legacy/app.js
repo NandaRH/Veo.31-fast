@@ -690,6 +690,44 @@ export function initLegacyApp({ initialMode } = {}) {
       } catch (_) {}
     })();
 
+  // ======= reCAPTCHA Token Status Check =======
+  const updateTokenStatus = async () => {
+    const dotEl = el("tokenStatusDot");
+    const textEl = el("tokenStatusText");
+    const barEl = el("tokenStatusBar");
+    if (!dotEl || !textEl) return;
+    
+    try {
+      const res = await fetch("/api/recaptcha-token-status");
+      const data = await res.json();
+      
+      if (data.available) {
+        dotEl.style.background = "#00ff88";
+        dotEl.style.boxShadow = "0 0 6px #00ff88";
+        textEl.style.color = "#00ff88";
+        textEl.textContent = `✓ Token tersedia (${data.age}s/${data.maxAge}s)`;
+        if (barEl) barEl.style.background = "rgba(0, 200, 100, 0.15)";
+      } else {
+        dotEl.style.background = "#ff6666";
+        dotEl.style.boxShadow = "none";
+        textEl.style.color = "#ff6666";
+        textEl.textContent = "✗ Token tidak tersedia - Admin perlu capture di Browser Mode";
+        if (barEl) barEl.style.background = "rgba(255, 100, 100, 0.15)";
+      }
+    } catch (_) {
+      dotEl.style.background = "#888";
+      dotEl.style.boxShadow = "none";
+      textEl.style.color = "#888";
+      textEl.textContent = "? Tidak dapat mengecek status token";
+      if (barEl) barEl.style.background = "rgba(100, 100, 100, 0.15)";
+    }
+  };
+  
+  // Check token status on load and every 30 seconds
+  updateTokenStatus();
+  const tokenCheckInterval = setInterval(updateTokenStatus, 30000);
+  cleanupFns.push(() => clearInterval(tokenCheckInterval));
+
   const getModelConfig = (aspectValue) => {
     if (!aspectValue) return fallbackModelConfig;
     return MODEL_KEY_MAP[aspectValue] || fallbackModelConfig;
@@ -4806,32 +4844,47 @@ export function initLegacyApp({ initialMode } = {}) {
           "Pilih video yang ingin digabungkan (urut sesuai pilihan).";
         items.forEach((it, idx) => {
           const row = document.createElement("div");
-          row.style.display = "flex";
-          row.style.alignItems = "center";
-          row.style.gap = "8px";
+          row.className = "merge-scene-item";
           row.innerHTML = `
-            <label style="display:flex; align-items:center; gap:8px; width:100%;">
-              <input type="checkbox" class="merge-check" data-url="${it.original}" data-label="${it.label}" />
-              <span>${it.label}</span>
+            <label class="merge-scene-label">
+              <input type="checkbox" class="merge-check-custom" data-url="${it.original}" data-label="${it.label}" />
+              <div class="merge-scene-card">
+                <div class="merge-scene-thumb">
+                  <video src="${it.proxied}" muted loop></video>
+                </div>
+                <div class="merge-scene-info">
+                  <div class="merge-scene-name">${it.label}</div>
+                  <div class="merge-scene-desc">Video adegan ke-${idx + 1}</div>
+                </div>
+                <div class="merge-scene-indicator"></div>
+              </div>
             </label>
           `;
           list.appendChild(row);
+
+          // Auto-play thumbnail on hover
+          const thumbVideo = row.querySelector("video");
+          row.addEventListener("mouseenter", () => thumbVideo.play().catch(() => {}));
+          row.addEventListener("mouseleave", () => {
+            thumbVideo.pause();
+            thumbVideo.currentTime = 0;
+          });
         });
       }
-      modal.style.display = "block";
+      modal.classList.add("show");
     } catch (_) {}
   };
 
   const closeMergeVideosModal = () => {
     try {
-      document.getElementById("mergeVideosModal").style.display = "none";
+      document.getElementById("mergeVideosModal").classList.remove("show");
     } catch (_) {}
   };
 
   const submitMergeVideos = async () => {
     try {
       const checks = Array.from(
-        document.querySelectorAll("#mergeVideosList .merge-check")
+        document.querySelectorAll("#mergeVideosList .merge-check-custom")
       );
       const selected = checks
         .filter((c) => c.checked)

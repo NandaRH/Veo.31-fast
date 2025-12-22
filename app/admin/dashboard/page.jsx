@@ -141,6 +141,18 @@ export default function AdminDashboardPage() {
             <span aria-hidden="true">🎞️</span>
             <span className="sr-only">Sora 2</span>
           </a>
+          <a
+            href="/browser-mode"
+            className="settings-btn"
+            title="Browser Mode (Anti-CAPTCHA)"
+            style={{
+              background: "linear-gradient(135deg, rgba(0,212,255,0.2), rgba(123,47,247,0.2))",
+              border: "1px solid rgba(0,212,255,0.4)",
+            }}
+          >
+            <span aria-hidden="true">🌐</span>
+            <span className="sr-only">Browser Mode</span>
+          </a>
           <div className="user-menu">
             <button
               className="settings-btn user-btn"
