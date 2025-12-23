@@ -150,27 +150,41 @@ export const launchBrowser = async (options = {}) => {
       });
     } else {
       // Chromium config
+
+      // Proxy configuration (optional)
+      const proxyConfig = process.env.PROXY_SERVER ? {
+        proxy: {
+          server: process.env.PROXY_SERVER, // e.g., "http://gate.smartproxy.com:10001"
+          username: process.env.PROXY_USERNAME,
+          password: process.env.PROXY_PASSWORD
+        }
+      } : {};
+
+      if (process.env.PROXY_SERVER) {
+        console.log("[Playwright] 🌐 Using proxy:", process.env.PROXY_SERVER);
+      }
+
       browserContext = await chromium.launchPersistentContext(dataDir, {
         headless: useHeadless,
         viewport: { width: 1280, height: 900 },
         userAgent:
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36", // Stable version
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         args: [
           "--disable-blink-features=AutomationControlled",
           "--disable-features=IsolateOrigins,site-per-process",
           "--no-sandbox",
           "--disable-setuid-sandbox",
           "--disable-dev-shm-usage",
-          "--disable-web-security",
-          "--disable-features=VizDisplayCompositor",
           "--disable-infobars",
           "--window-size=1280,900",
           "--start-maximized",
+          "--use-gl=swiftshader", // GPU emulation for better fingerprint
         ],
         ignoreDefaultArgs: ["--enable-automation"],
         bypassCSP: true,
         locale: "en-US",
         timezoneId: "Asia/Jakarta",
+        ...proxyConfig // Spread proxy config if exists
       });
     }
 
